@@ -1,0 +1,13 @@
+.env
+.venv/
+.idea/
+logs/
+__pycache__/
+*.pyc
+md5.text
+user_dict/**/*.json
+user_dict/**/*.db
+user_dict/**/
+config/credentials.yaml
+.streamlit/secrets.toml
+.cursor/
