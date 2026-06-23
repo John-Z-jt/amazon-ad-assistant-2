@@ -15,7 +15,16 @@ from diagnosis.keyword_diagnosis import run_keyword_diagnosis, KEYWORD_CONCLUSIO
 from diagnosis.search_diagnosis import run_search_diagnosis, SEARCH_CONCLUSION_LABELS
 from diagnosis.config import DiagnosisConfig
 
-rag = RagSummarizeService()
+_rag_service = None
+
+
+def _get_rag_service() -> RagSummarizeService:
+    global _rag_service
+    if _rag_service is None:
+        _rag_service = RagSummarizeService()
+    return _rag_service
+
+
 @tool(description = "从向量存储中检索参考资料。回答关于广告分析模块的功能、指标含义、设计原因等问题。")
 def rag_summarize(query: str) -> str:
     """从向量库检索资料并生成 RAG 总结回复。
@@ -29,7 +38,7 @@ def rag_summarize(query: str) -> str:
     Raises:
         Exception: 检索或模型调用失败。
     """
-    return rag.rag_summarize(query)
+    return _get_rag_service().rag_summarize(query)
 
 
 @tool(

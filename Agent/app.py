@@ -2,21 +2,29 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import tempfile
-from user_history_store import FileHistoryStore
-from data_df_store.data_store import store   # 直接导入 store 对象
-#导入动态路径函数
 from utils.path_tool import get_project_root
-from react_agent import ReactAgent
-import time
 
-# 将真正的项目根目录加入 sys.path（其实 _parent_dir 就是根目录，但调用函数更统一）
 project_root = get_project_root()
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
+
 import streamlit as st
-import pandas as pd
+
+st.set_page_config(layout="wide")
+
+from utils.env_bootstrap import bootstrap_env_from_secrets
+
+bootstrap_env_from_secrets()
+
+import tempfile
+import time
 import io
+
+import pandas as pd
+
+from user_history_store import FileHistoryStore
+from data_df_store.data_store import store
+from react_agent import ReactAgent
 from ad_analyzers.budget_analyzer import analyze_budget
 from ad_analyzers.placement_analyzer import analyze_placement, clean_placement_data, get_placement_analysis
 from ad_analyzers.keyword_analyzer import clean_keyword_report, analyze_keyword,analyze_keyword_cross_activities,get_keyword_analysis
@@ -63,11 +71,7 @@ from history.ui import (
 from history.ops_journal_ui import render_ops_journal_tab
 from auth.login import require_login
 from auth.session_reset import ensure_user_session
-from utils.env_bootstrap import bootstrap_env_from_secrets
 
-
-st.set_page_config(layout="wide")
-bootstrap_env_from_secrets()
 
 authenticator, user_id = require_login()
 ensure_user_session(user_id)

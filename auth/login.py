@@ -13,7 +13,7 @@ def render_login() -> stauth.Authenticate | None:
     """
     try:
         credentials, cookie = load_authenticator_config()
-    except FileNotFoundError as e:
+    except (FileNotFoundError, RuntimeError) as e:
         st.error(str(e))
         return None
 
