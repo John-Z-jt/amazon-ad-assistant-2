@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import os
+from typing import Any
 
+from auth.credentials_loader import _to_plain_dict
 from auth.user_context import get_current_user_id
 
 
@@ -11,7 +13,7 @@ def _secrets_turso() -> dict | None:
 
         turso = st.secrets.get("turso")
         if turso:
-            return dict(turso)
+            return _to_plain_dict(turso)
     except Exception:
         pass
     return None
@@ -25,6 +27,21 @@ def turso_configured() -> bool:
     return bool(os.environ.get("TURSO_DATABASE_URL") and os.environ.get("TURSO_AUTH_TOKEN"))
 
 
+def turso_url_candidates(url: str) -> list[str]:
+    """libsql-client 可尝试的 URL 形式。"""
+    url = str(url).strip().rstrip("/")
+    candidates = [url]
+    if url.startswith("libsql://"):
+        https_url = "https://" + url[len("libsql://") :]
+        if https_url not in candidates:
+            candidates.append(https_url)
+    elif url.startswith("https://"):
+        libsql_url = "libsql://" + url[len("https://") :]
+        if libsql_url not in candidates:
+            candidates.append(libsql_url)
+    return candidates
+
+
 def get_turso_credentials(user_id: str | None = None) -> tuple[str, str] | None:
     """返回当前用户的 (database_url, auth_token)。未配置时返回 None。"""
     if user_id is None:
@@ -33,8 +50,8 @@ def get_turso_credentials(user_id: str | None = None) -> tuple[str, str] | None:
 
     turso = _secrets_turso()
     if turso:
-        databases = dict(turso.get("databases", {}))
-        tokens = dict(turso.get("tokens", {}))
+        databases = _to_plain_dict(turso.get("databases", {}))
+        tokens = _to_plain_dict(turso.get("tokens", {}))
         url = databases.get(user_id)
         token = tokens.get(user_id) or turso.get("auth_token")
         if url and token:
