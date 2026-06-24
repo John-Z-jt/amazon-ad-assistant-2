@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, timedelta
+from typing import Callable, Literal
 
 import streamlit as st
 
@@ -114,6 +115,108 @@ def clear_ingest_fingerprints() -> None:
     clear_product_sponsored_ingest_fingerprint()
 
 
+INGEST_FEEDBACK_KEY = "_ingest_feedback"
+IngestStatus = Literal["ingested", "skipped"]
+
+
+def clear_ingest_feedback() -> None:
+    st.session_state.pop(INGEST_FEEDBACK_KEY, None)
+
+
+def clear_ingest_feedback_for(report_key: str) -> None:
+    feedback = dict(st.session_state.get(INGEST_FEEDBACK_KEY) or {})
+    feedback.pop(report_key, None)
+    if feedback:
+        st.session_state[INGEST_FEEDBACK_KEY] = feedback
+    else:
+        st.session_state.pop(INGEST_FEEDBACK_KEY, None)
+
+
+def set_ingest_feedback(report_key: str, level: str, message: str) -> None:
+    feedback = dict(st.session_state.get(INGEST_FEEDBACK_KEY) or {})
+    feedback[report_key] = {"level": level, "message": message}
+    st.session_state[INGEST_FEEDBACK_KEY] = feedback
+
+
+def render_history_storage_caption() -> None:
+    from auth.user_context import get_current_user_id
+    from history.turso_config import get_turso_credentials, turso_configured
+
+    if turso_configured():
+        uid = get_current_user_id()
+        if get_turso_credentials(uid):
+            st.sidebar.caption(f"历史库：Turso 云端（{uid}）")
+        else:
+            st.sidebar.warning(f"历史库：Turso 已启用，但未配置用户 {uid} 的数据库/token")
+    else:
+        st.sidebar.caption("历史库：本地 SQLite")
+
+
+def render_ingest_feedback_sidebar() -> None:
+    feedback = st.session_state.get(INGEST_FEEDBACK_KEY) or {}
+    if not feedback:
+        return
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**历史库入库状态**")
+    for report_key in (
+        "budget",
+        "placement",
+        "keyword",
+        "search",
+        "search_share",
+        "product_sponsored",
+    ):
+        item = feedback.get(report_key)
+        if not item:
+            continue
+        level = item["level"]
+        message = item["message"]
+        if level == "success":
+            st.sidebar.success(message)
+        elif level == "info":
+            st.sidebar.info(message)
+        elif level == "warning":
+            st.sidebar.warning(message)
+        elif level == "error":
+            st.sidebar.error(message)
+
+
+def run_report_ingest(
+    report_key: str,
+    label: str,
+    df,
+    source_filename: str,
+    file_content: bytes | None,
+    maybe_ingest_fn: Callable[..., tuple[int | None, IngestStatus]],
+) -> int | None:
+    """执行 maybe_ingest 并写入侧边栏持久入库状态（跨 rerun 可见）。"""
+    try:
+        upload_id, status = maybe_ingest_fn(
+            df,
+            source_filename=source_filename,
+            file_content=file_content,
+        )
+        if status == "ingested":
+            set_ingest_feedback(
+                report_key,
+                "success",
+                f"{label}已写入历史库（upload #{upload_id}）。",
+            )
+        else:
+            set_ingest_feedback(
+                report_key,
+                "info",
+                f"{label}已在本次会话入库，未重复写入。",
+            )
+        return upload_id
+    except ValueError as exc:
+        set_ingest_feedback(report_key, "warning", f"{label}历史入库跳过：{exc}")
+    except Exception as exc:
+        set_ingest_feedback(report_key, "error", f"{label}历史入库失败：{exc}")
+    return None
+
+
 def _upload_option_label(item: dict) -> str:
     report_type = item.get("report_type", "")
     return (
@@ -178,19 +281,19 @@ def maybe_ingest_budget_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     """同一文件在 uploader 中停留时，仅首次写入历史库（避免 Streamlit rerun 重复入库）。"""
     from history.budget_storage import ingest_budget_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(BUDGET_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_budget_upload(df, source_filename=source_filename)
     st.session_state[BUDGET_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def maybe_ingest_placement_upload(
@@ -198,18 +301,18 @@ def maybe_ingest_placement_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     from history.placement_storage import ingest_placement_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(PLACEMENT_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_placement_upload(df, source_filename=source_filename)
     st.session_state[PLACEMENT_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def maybe_ingest_keyword_upload(
@@ -217,18 +320,18 @@ def maybe_ingest_keyword_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     from history.keyword_storage import ingest_keyword_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(KEYWORD_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_keyword_upload(df, source_filename=source_filename)
     st.session_state[KEYWORD_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def maybe_ingest_search_upload(
@@ -236,18 +339,18 @@ def maybe_ingest_search_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     from history.search_storage import ingest_search_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(SEARCH_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_search_upload(df, source_filename=source_filename)
     st.session_state[SEARCH_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def maybe_ingest_search_share_upload(
@@ -255,18 +358,18 @@ def maybe_ingest_search_share_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     from history.search_share_storage import ingest_search_share_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(SEARCH_SHARE_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_search_share_upload(df, source_filename=source_filename)
     st.session_state[SEARCH_SHARE_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def maybe_ingest_product_sponsored_upload(
@@ -274,18 +377,18 @@ def maybe_ingest_product_sponsored_upload(
     source_filename: str,
     *,
     file_content: bytes | None = None,
-) -> int | None:
+) -> tuple[int | None, IngestStatus]:
     from history.product_sponsored_storage import ingest_product_sponsored_upload
 
     _init_session_upload_state()
     fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(PRODUCT_SPONSORED_INGEST_FP_KEY) == fp:
-        return None
+        return None, "skipped"
 
     upload_id = ingest_product_sponsored_upload(df, source_filename=source_filename)
     st.session_state[PRODUCT_SPONSORED_INGEST_FP_KEY] = fp
     register_session_upload(upload_id)
-    return upload_id
+    return upload_id, "ingested"
 
 
 def render_upload_summary_table(

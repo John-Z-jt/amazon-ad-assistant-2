@@ -67,6 +67,10 @@ from history.ui import (
     render_end_session_dialog,
     render_history_query_tab,
     render_top_bar_end_session_button,
+    render_history_storage_caption,
+    render_ingest_feedback_sidebar,
+    run_report_ingest,
+    clear_ingest_feedback_for,
 )
 from history.ops_journal_ui import render_ops_journal_tab
 from auth.login import require_login
@@ -120,17 +124,34 @@ REPORT_FILE_TYPES = ["csv", "xlsx"]
 with st.sidebar:
     authenticator.logout("退出登录", "sidebar")
     st.caption(f"当前用户：**{user_id}**")
+    render_history_storage_caption()
     st.header("上传广告报表")
-    budget_file = st.file_uploader("预算报表 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    placement_file = st.file_uploader("广告活动广告位 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    keyword_file = st.file_uploader("投放词报表 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    search_file = st.file_uploader("搜索词报表 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    search_share_file = st.file_uploader("搜索词份额报告 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    product_report_file = st.file_uploader("推广的商品报告 (CSV / Excel)", type=REPORT_FILE_TYPES)
+    budget_file = st.file_uploader(
+        "预算报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"budget_{user_id}"
+    )
+    placement_file = st.file_uploader(
+        "广告活动广告位 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"placement_{user_id}"
+    )
+    keyword_file = st.file_uploader(
+        "投放词报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"keyword_{user_id}"
+    )
+    search_file = st.file_uploader(
+        "搜索词报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"search_{user_id}"
+    )
+    search_share_file = st.file_uploader(
+        "搜索词份额报告 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"search_share_{user_id}"
+    )
+    product_report_file = st.file_uploader(
+        "推广的商品报告 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"product_{user_id}"
+    )
 
     st.header("上传业务/库存报表")
-    business_file = st.file_uploader("业务报表 (CSV / Excel)", type=REPORT_FILE_TYPES)
-    inventory_file = st.file_uploader("FBA 库存报表 (CSV / Excel)", type=REPORT_FILE_TYPES)
+    business_file = st.file_uploader(
+        "业务报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"business_{user_id}"
+    )
+    inventory_file = st.file_uploader(
+        "FBA 库存报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"inventory_{user_id}"
+    )
 
     current_config = render_diagnosis_config_sidebar()
     maybe_recalc_on_config_change(current_config, user_id)
@@ -165,27 +186,25 @@ def load_report_file(uploaded_file):
 
 if budget_file is None:
     clear_budget_ingest_fingerprint()
+    clear_ingest_feedback_for("budget")
 else:
     df = load_report_file(budget_file)
     if df is not None:
         store.set("budget", df)
         st.session_state.df_budget = df
-        try:
-            upload_id = maybe_ingest_budget_upload(
-                df,
-                source_filename=budget_file.name or "budget.csv",
-                file_content=budget_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("预算已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"预算历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"预算历史入库失败：{e}")
+        run_report_ingest(
+            "budget",
+            "预算",
+            df,
+            budget_file.name or "budget.csv",
+            budget_file.getvalue(),
+            maybe_ingest_budget_upload,
+        )
         recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
 if placement_file is None:
     clear_placement_ingest_fingerprint()
+    clear_ingest_feedback_for("placement")
 else:
     df = load_report_file(placement_file)
     if df is not None:
@@ -195,22 +214,19 @@ else:
         result = get_placement_analysis(df_clean)
         st.session_state.placement_analysis_result = result
         store.set("placement_analysis_result", result)
-        try:
-            upload_id = maybe_ingest_placement_upload(
-                df,
-                source_filename=placement_file.name or "placement.csv",
-                file_content=placement_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("广告位已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"广告位历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"广告位历史入库失败：{e}")
+        run_report_ingest(
+            "placement",
+            "广告位",
+            df,
+            placement_file.name or "placement.csv",
+            placement_file.getvalue(),
+            maybe_ingest_placement_upload,
+        )
         recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
 if keyword_file is None:
     clear_keyword_ingest_fingerprint()
+    clear_ingest_feedback_for("keyword")
 else:
     df = load_report_file(keyword_file)
     if df is not None:
@@ -221,22 +237,19 @@ else:
         result = get_keyword_analysis(df_keyword_clean)
         st.session_state.keyword_analysis_result = result
         store.set("keyword_analysis_result", result)
-        try:
-            upload_id = maybe_ingest_keyword_upload(
-                df,
-                source_filename=keyword_file.name or "keyword.csv",
-                file_content=keyword_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("投放词已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"投放词历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"投放词历史入库失败：{e}")
+        run_report_ingest(
+            "keyword",
+            "投放词",
+            df,
+            keyword_file.name or "keyword.csv",
+            keyword_file.getvalue(),
+            maybe_ingest_keyword_upload,
+        )
         recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
 if search_file is None:
     clear_search_ingest_fingerprint()
+    clear_ingest_feedback_for("search")
 else:
     df = load_report_file(search_file)
     if df is not None:
@@ -247,22 +260,19 @@ else:
         result = get_search_analysis(df_search_clean)
         st.session_state.search_analysis_result = result
         store.set("search_analysis_result", result)
-        try:
-            upload_id = maybe_ingest_search_upload(
-                df,
-                source_filename=search_file.name or "search.csv",
-                file_content=search_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("搜索词已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"搜索词历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"搜索词历史入库失败：{e}")
+        run_report_ingest(
+            "search",
+            "搜索词",
+            df,
+            search_file.name or "search.csv",
+            search_file.getvalue(),
+            maybe_ingest_search_upload,
+        )
         recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
 if search_share_file is None:
     clear_search_share_ingest_fingerprint()
+    clear_ingest_feedback_for("search_share")
 else:
     df = load_report_file(search_share_file)
     if df is not None:
@@ -274,21 +284,18 @@ else:
             result = get_search_term_trend(df_clean)
             st.session_state.search_term_trend_result = result
             store.set("search_term_trend_result", result)
-        try:
-            upload_id = maybe_ingest_search_share_upload(
-                df,
-                source_filename=search_share_file.name or "search_share.csv",
-                file_content=search_share_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("搜索词份额已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"搜索词份额历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"搜索词份额历史入库失败：{e}")
+        run_report_ingest(
+            "search_share",
+            "搜索词份额",
+            df,
+            search_share_file.name or "search_share.csv",
+            search_share_file.getvalue(),
+            maybe_ingest_search_share_upload,
+        )
 
 if product_report_file is None:
     clear_product_sponsored_ingest_fingerprint()
+    clear_ingest_feedback_for("product_sponsored")
 else:
     df = load_report_file(product_report_file)
     if df is not None:
@@ -301,18 +308,14 @@ else:
         refresh_linkage_indexes(product_df=df_product_clean)
         if store.get("budget") is not None or store.get("placement") is not None:
             recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
-        try:
-            upload_id = maybe_ingest_product_sponsored_upload(
-                df,
-                source_filename=product_report_file.name or "product_sponsored.csv",
-                file_content=product_report_file.getvalue(),
-            )
-            if upload_id is not None:
-                st.sidebar.success("推广的商品已写入历史库。")
-        except ValueError as e:
-            st.sidebar.warning(f"推广的商品历史入库跳过：{e}")
-        except Exception as e:
-            st.sidebar.error(f"推广的商品历史入库失败：{e}")
+        run_report_ingest(
+            "product_sponsored",
+            "推广的商品",
+            df,
+            product_report_file.name or "product_sponsored.csv",
+            product_report_file.getvalue(),
+            maybe_ingest_product_sponsored_upload,
+        )
 
 if inventory_file is not None:
     try:
@@ -339,6 +342,8 @@ if business_file is not None:
         st.error(str(e))
     except Exception as e:
         st.error(f"业务报表加载失败：{e}")
+
+render_ingest_feedback_sidebar()
 
 # 标签页
 tab1, tab_history, tab_ops, tab2 = st.tabs(

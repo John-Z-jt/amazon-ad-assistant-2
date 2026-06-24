@@ -28,5 +28,9 @@ class DataStore:
     def clear(self):
         self._data.pop(self._bucket_key(), None)
 
+    def clear_all(self):
+        """切换登录用户时清空所有运营分桶（进程内内存）。"""
+        self._data.clear()
+
 
 store = DataStore()

@@ -293,6 +293,20 @@ def _invalidate_cached_turso_connection(user_id: str, url: str) -> None:
         pass
 
 
+def invalidate_all_cached_turso_connections() -> None:
+    """切换用户时关闭并移除 session 内全部 Turso HTTP 连接缓存。"""
+    try:
+        import streamlit as st
+
+        keys = [k for k in list(st.session_state.keys()) if str(k).startswith("_turso_conn_")]
+        for key in keys:
+            conn = st.session_state.pop(key, None)
+            if isinstance(conn, _TursoConnection):
+                conn.close()
+    except Exception:
+        pass
+
+
 def _connect_turso(url: str, token: str, *, user_id: str | None = None) -> _TursoConnection:
     if user_id is None:
         user_id = get_current_user_id()

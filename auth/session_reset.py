@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import streamlit as st
 
+from data_df_store.data_store import store
 from diagnosis.config import load_diagnosis_config
-from history.ui import clear_ingest_fingerprints
+from history.database import invalidate_all_cached_turso_connections
+from history.ui import clear_ingest_fingerprints, clear_ingest_feedback
 
 
 def reset_app_state_for_user(user_id: str) -> None:
@@ -28,10 +30,16 @@ def reset_app_state_for_user(user_id: str) -> None:
         "show_end_session_dialog",
         "user_history_store",
         "_history_store_user",
+        "agent",
+        "messages",
     ):
         st.session_state.pop(key, None)
 
+    store.clear_all()
     clear_ingest_fingerprints()
+    clear_ingest_feedback()
+    invalidate_all_cached_turso_connections()
+
     st.session_state.diagnosis_config = load_diagnosis_config(user_id)
     st.session_state._diagnosis_config_fp = st.session_state.diagnosis_config.fingerprint()
     st.session_state.session_upload_ids = []
