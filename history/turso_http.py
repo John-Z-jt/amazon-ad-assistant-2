@@ -60,6 +60,7 @@ class HttpExecuteResult:
     columns: tuple[str, ...]
     rows: list[tuple[Any, ...]]
     last_insert_rowid: int | None
+    rowcount: int = 0
 
 
 class TursoHttpClient:
@@ -130,7 +131,7 @@ class TursoHttpClient:
 
         response = result_item.get("response") or {}
         if response.get("type") != "execute":
-            return HttpExecuteResult((), [], None)
+            return HttpExecuteResult((), [], None, 0)
 
         result = response.get("result") or {}
         columns = tuple(col.get("name", "") for col in result.get("cols", []))
@@ -143,7 +144,9 @@ class TursoHttpClient:
 
         last_id = result.get("last_insert_rowid")
         last_insert_rowid = int(last_id) if last_id is not None else None
-        return HttpExecuteResult(columns, rows, last_insert_rowid)
+        affected = result.get("affected_row_count")
+        rowcount = int(affected) if affected is not None else 0
+        return HttpExecuteResult(columns, rows, last_insert_rowid, rowcount)
 
     def _stmt_request(self, sql: str, parameters: Iterable[Any] | None = None) -> dict[str, Any]:
         stmt: dict[str, Any] = {"sql": sql}
@@ -192,7 +195,7 @@ class TursoHttpClient:
         )
         results = payload.get("results") or []
         if not results:
-            return HttpExecuteResult((), [], None)
+            return HttpExecuteResult((), [], None, 0)
         return self._parse_execute_result(results[0])
 
     def execute_many(self, sql: str, seq_of_parameters: Iterable[Iterable[Any]]) -> HttpExecuteResult | None:

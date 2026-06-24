@@ -91,4 +91,4 @@ def delete_journal_entries(entry_ids: list[int]) -> int:
             f"DELETE FROM ops_journal WHERE id IN ({placeholders})",
             entry_ids,
         )
-        return int(cur.rowcount)
+        return int(getattr(cur, "rowcount", 0) or len(entry_ids))

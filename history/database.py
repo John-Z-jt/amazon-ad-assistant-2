@@ -197,6 +197,7 @@ class _TursoCursor:
     def __init__(self, result: HttpExecuteResult | None):
         self._result = result
         self.lastrowid = result.last_insert_rowid if result else None
+        self.rowcount = result.rowcount if result else 0
 
     def fetchall(self) -> list[_DictRow]:
         if self._result is None:
