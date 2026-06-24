@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date, timedelta
-from typing import Callable, Literal
+from typing import Literal
 
 import streamlit as st
 
@@ -115,27 +115,55 @@ def clear_ingest_fingerprints() -> None:
     clear_product_sponsored_ingest_fingerprint()
 
 
-INGEST_FEEDBACK_KEY = "_ingest_feedback"
+_DATA_FP_REPORTS = (
+    "budget",
+    "placement",
+    "keyword",
+    "search",
+    "search_share",
+    "product_sponsored",
+    "inventory",
+    "business",
+)
+
+
+def _data_fp_key(report: str) -> str:
+    return f"{report}_data_fingerprint"
+
+
+def upload_file_fingerprint(source_filename: str, file_content: bytes) -> str:
+    return _upload_data_fingerprint(source_filename, file_content=file_content)
+
+
+def is_upload_file_unchanged(report: str, source_filename: str, file_content: bytes) -> bool:
+    fp = upload_file_fingerprint(source_filename, file_content)
+    return st.session_state.get(_data_fp_key(report)) == fp
+
+
+def mark_upload_file_processed(report: str, source_filename: str, file_content: bytes) -> None:
+    st.session_state[_data_fp_key(report)] = upload_file_fingerprint(source_filename, file_content)
+
+
+def clear_upload_data_fingerprint(report: str) -> None:
+    st.session_state.pop(_data_fp_key(report), None)
+
+
+def clear_all_upload_data_fingerprints() -> None:
+    for report in _DATA_FP_REPORTS:
+        clear_upload_data_fingerprint(report)
+
+
+@st.cache_data(ttl=60)
+def cached_list_all_uploads(user_id: str, limit: int = 100) -> list[dict]:
+    """按用户缓存 upload 列表，减少 Turso 往返（删除后需 invalidate）。"""
+    return list_all_uploads(limit=limit)
+
+
+def invalidate_uploads_list_cache() -> None:
+    cached_list_all_uploads.clear()
+
+
 IngestStatus = Literal["ingested", "skipped"]
-
-
-def clear_ingest_feedback() -> None:
-    st.session_state.pop(INGEST_FEEDBACK_KEY, None)
-
-
-def clear_ingest_feedback_for(report_key: str) -> None:
-    feedback = dict(st.session_state.get(INGEST_FEEDBACK_KEY) or {})
-    feedback.pop(report_key, None)
-    if feedback:
-        st.session_state[INGEST_FEEDBACK_KEY] = feedback
-    else:
-        st.session_state.pop(INGEST_FEEDBACK_KEY, None)
-
-
-def set_ingest_feedback(report_key: str, level: str, message: str) -> None:
-    feedback = dict(st.session_state.get(INGEST_FEEDBACK_KEY) or {})
-    feedback[report_key] = {"level": level, "message": message}
-    st.session_state[INGEST_FEEDBACK_KEY] = feedback
 
 
 def render_history_storage_caption() -> None:
@@ -150,71 +178,6 @@ def render_history_storage_caption() -> None:
             st.sidebar.warning(f"历史库：Turso 已启用，但未配置用户 {uid} 的数据库/token")
     else:
         st.sidebar.caption("历史库：本地 SQLite")
-
-
-def render_ingest_feedback_sidebar() -> None:
-    feedback = st.session_state.get(INGEST_FEEDBACK_KEY) or {}
-    if not feedback:
-        return
-
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**历史库入库状态**")
-    for report_key in (
-        "budget",
-        "placement",
-        "keyword",
-        "search",
-        "search_share",
-        "product_sponsored",
-    ):
-        item = feedback.get(report_key)
-        if not item:
-            continue
-        level = item["level"]
-        message = item["message"]
-        if level == "success":
-            st.sidebar.success(message)
-        elif level == "info":
-            st.sidebar.info(message)
-        elif level == "warning":
-            st.sidebar.warning(message)
-        elif level == "error":
-            st.sidebar.error(message)
-
-
-def run_report_ingest(
-    report_key: str,
-    label: str,
-    df,
-    source_filename: str,
-    file_content: bytes | None,
-    maybe_ingest_fn: Callable[..., tuple[int | None, IngestStatus]],
-) -> int | None:
-    """执行 maybe_ingest 并写入侧边栏持久入库状态（跨 rerun 可见）。"""
-    try:
-        upload_id, status = maybe_ingest_fn(
-            df,
-            source_filename=source_filename,
-            file_content=file_content,
-        )
-        if status == "ingested":
-            set_ingest_feedback(
-                report_key,
-                "success",
-                f"{label}已写入历史库（upload #{upload_id}）。",
-            )
-        else:
-            set_ingest_feedback(
-                report_key,
-                "info",
-                f"{label}已在本次会话入库，未重复写入。",
-            )
-        return upload_id
-    except ValueError as exc:
-        set_ingest_feedback(report_key, "warning", f"{label}历史入库跳过：{exc}")
-    except Exception as exc:
-        set_ingest_feedback(report_key, "error", f"{label}历史入库失败：{exc}")
-    return None
 
 
 def _upload_option_label(item: dict) -> str:
@@ -273,6 +236,7 @@ def _apply_upload_deletions(upload_ids: list[int], uploads: list[dict]) -> int:
 
     st.session_state.pop("history_report_query", None)
     st.session_state.pop("history_budget_query", None)
+    invalidate_uploads_list_cache()
     return len(to_delete)
 
 
@@ -885,7 +849,13 @@ def render_history_query_tab() -> None:
     )
 
     st.markdown("#### 已入库 upload 摘要")
-    render_upload_summary_table(list_all_uploads(), key_prefix="history_summary", allow_delete=True)
+    from auth.user_context import get_current_user_id
+
+    render_upload_summary_table(
+        cached_list_all_uploads(get_current_user_id()),
+        key_prefix="history_summary",
+        allow_delete=True,
+    )
 
     st.markdown("#### 查询条件")
     report_options = ["预算", "广告位", "投放词", "搜索词", "搜索词份额", "推广的商品"]

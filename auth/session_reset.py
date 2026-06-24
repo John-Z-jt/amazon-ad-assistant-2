@@ -5,7 +5,11 @@ import streamlit as st
 from data_df_store.data_store import store
 from diagnosis.config import load_diagnosis_config
 from history.database import invalidate_all_cached_turso_connections
-from history.ui import clear_ingest_fingerprints, clear_ingest_feedback
+from history.ui import (
+    clear_all_upload_data_fingerprints,
+    clear_ingest_fingerprints,
+    invalidate_uploads_list_cache,
+)
 
 
 def reset_app_state_for_user(user_id: str) -> None:
@@ -37,7 +41,8 @@ def reset_app_state_for_user(user_id: str) -> None:
 
     store.clear_all()
     clear_ingest_fingerprints()
-    clear_ingest_feedback()
+    clear_all_upload_data_fingerprints()
+    invalidate_uploads_list_cache()
     invalidate_all_cached_turso_connections()
 
     st.session_state.diagnosis_config = load_diagnosis_config(user_id)

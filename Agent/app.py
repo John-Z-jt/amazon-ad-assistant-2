@@ -58,6 +58,9 @@ from history.ui import (
     clear_search_ingest_fingerprint,
     clear_search_share_ingest_fingerprint,
     clear_product_sponsored_ingest_fingerprint,
+    clear_upload_data_fingerprint,
+    is_upload_file_unchanged,
+    mark_upload_file_processed,
     maybe_ingest_budget_upload,
     maybe_ingest_placement_upload,
     maybe_ingest_keyword_upload,
@@ -68,9 +71,6 @@ from history.ui import (
     render_history_query_tab,
     render_top_bar_end_session_button,
     render_history_storage_caption,
-    render_ingest_feedback_sidebar,
-    run_report_ingest,
-    clear_ingest_feedback_for,
 )
 from history.ops_journal_ui import render_ops_journal_tab
 from auth.login import require_login
@@ -169,13 +169,17 @@ def render_full_dataframe_preview(df: pd.DataFrame, label: str) -> None:
 
 
 @st.cache_data
-def load_report_file(uploaded_file):
+def _load_report_bytes(file_bytes: bytes, filename: str):
+    """按文件内容 hash 缓存 CSV/xlsx 解析结果。"""
+    bio = io.BytesIO(file_bytes)
+    bio.name = filename
+    return read_report_file(bio, "报表", filename=filename)
+
+
+def load_report_file(file_bytes: bytes, filename: str):
     """读取上传的 CSV 或 xlsx 报表。"""
-    if uploaded_file is None:
-        return None
-    filename = getattr(uploaded_file, "name", None)
     try:
-        return read_report_file(uploaded_file, "报表", filename=filename)
+        return _load_report_bytes(file_bytes, filename)
     except ValueError as e:
         st.error(str(e))
         return None
@@ -184,29 +188,44 @@ def load_report_file(uploaded_file):
         return None
 
 
+_diagnosis_needs_recalc = False
+
 if budget_file is None:
     clear_budget_ingest_fingerprint()
-    clear_ingest_feedback_for("budget")
-else:
-    df = load_report_file(budget_file)
+    clear_upload_data_fingerprint("budget")
+elif not is_upload_file_unchanged(
+    "budget", budget_file.name or "budget.csv", budget_file.getvalue()
+):
+    budget_name = budget_file.name or "budget.csv"
+    budget_bytes = budget_file.getvalue()
+    df = load_report_file(budget_bytes, budget_name)
     if df is not None:
         store.set("budget", df)
         st.session_state.df_budget = df
-        run_report_ingest(
-            "budget",
-            "预算",
-            df,
-            budget_file.name or "budget.csv",
-            budget_file.getvalue(),
-            maybe_ingest_budget_upload,
-        )
-        recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+        try:
+            upload_id, _ = maybe_ingest_budget_upload(
+                df,
+                source_filename=budget_name,
+                file_content=budget_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("预算已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"预算历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"预算历史入库失败：{e}")
+        mark_upload_file_processed("budget", budget_name, budget_bytes)
+        _diagnosis_needs_recalc = True
 
 if placement_file is None:
     clear_placement_ingest_fingerprint()
-    clear_ingest_feedback_for("placement")
-else:
-    df = load_report_file(placement_file)
+    clear_upload_data_fingerprint("placement")
+elif not is_upload_file_unchanged(
+    "placement", placement_file.name or "placement.csv", placement_file.getvalue()
+):
+    placement_name = placement_file.name or "placement.csv"
+    placement_bytes = placement_file.getvalue()
+    df = load_report_file(placement_bytes, placement_name)
     if df is not None:
         df_clean = clean_placement_data(df)
         store.set("placement", df_clean)
@@ -214,90 +233,127 @@ else:
         result = get_placement_analysis(df_clean)
         st.session_state.placement_analysis_result = result
         store.set("placement_analysis_result", result)
-        run_report_ingest(
-            "placement",
-            "广告位",
-            df,
-            placement_file.name or "placement.csv",
-            placement_file.getvalue(),
-            maybe_ingest_placement_upload,
-        )
-        recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+        try:
+            upload_id, _ = maybe_ingest_placement_upload(
+                df,
+                source_filename=placement_name,
+                file_content=placement_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("广告位已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"广告位历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"广告位历史入库失败：{e}")
+        mark_upload_file_processed("placement", placement_name, placement_bytes)
+        _diagnosis_needs_recalc = True
 
 if keyword_file is None:
     clear_keyword_ingest_fingerprint()
-    clear_ingest_feedback_for("keyword")
-else:
-    df = load_report_file(keyword_file)
+    clear_upload_data_fingerprint("keyword")
+elif not is_upload_file_unchanged(
+    "keyword", keyword_file.name or "keyword.csv", keyword_file.getvalue()
+):
+    keyword_name = keyword_file.name or "keyword.csv"
+    keyword_bytes = keyword_file.getvalue()
+    df = load_report_file(keyword_bytes, keyword_name)
     if df is not None:
         df_keyword_clean = clean_keyword_report(df)
         st.session_state.df_keyword = df_keyword_clean
         store.set("keyword", df_keyword_clean)
-        # 预计算投放词分析结果
         result = get_keyword_analysis(df_keyword_clean)
         st.session_state.keyword_analysis_result = result
         store.set("keyword_analysis_result", result)
-        run_report_ingest(
-            "keyword",
-            "投放词",
-            df,
-            keyword_file.name or "keyword.csv",
-            keyword_file.getvalue(),
-            maybe_ingest_keyword_upload,
-        )
-        recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+        try:
+            upload_id, _ = maybe_ingest_keyword_upload(
+                df,
+                source_filename=keyword_name,
+                file_content=keyword_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("投放词已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"投放词历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"投放词历史入库失败：{e}")
+        mark_upload_file_processed("keyword", keyword_name, keyword_bytes)
+        _diagnosis_needs_recalc = True
 
 if search_file is None:
     clear_search_ingest_fingerprint()
-    clear_ingest_feedback_for("search")
-else:
-    df = load_report_file(search_file)
+    clear_upload_data_fingerprint("search")
+elif not is_upload_file_unchanged(
+    "search", search_file.name or "search.csv", search_file.getvalue()
+):
+    search_name = search_file.name or "search.csv"
+    search_bytes = search_file.getvalue()
+    df = load_report_file(search_bytes, search_name)
     if df is not None:
         df_search_clean = clean_search_report(df)
         st.session_state.df_search = df_search_clean
-        store.set("search", df_search_clean)   # 如果后续 Agent 需要，可以存入 store
-        # 预计算搜索词分析结果
+        store.set("search", df_search_clean)
         result = get_search_analysis(df_search_clean)
         st.session_state.search_analysis_result = result
         store.set("search_analysis_result", result)
-        run_report_ingest(
-            "search",
-            "搜索词",
-            df,
-            search_file.name or "search.csv",
-            search_file.getvalue(),
-            maybe_ingest_search_upload,
-        )
-        recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+        try:
+            upload_id, _ = maybe_ingest_search_upload(
+                df,
+                source_filename=search_name,
+                file_content=search_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("搜索词已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"搜索词历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"搜索词历史入库失败：{e}")
+        mark_upload_file_processed("search", search_name, search_bytes)
+        _diagnosis_needs_recalc = True
 
 if search_share_file is None:
     clear_search_share_ingest_fingerprint()
-    clear_ingest_feedback_for("search_share")
-else:
-    df = load_report_file(search_share_file)
+    clear_upload_data_fingerprint("search_share")
+elif not is_upload_file_unchanged(
+    "search_share",
+    search_share_file.name or "search_share.csv",
+    search_share_file.getvalue(),
+):
+    share_name = search_share_file.name or "search_share.csv"
+    share_bytes = search_share_file.getvalue()
+    df = load_report_file(share_bytes, share_name)
     if df is not None:
         df_clean = clean_search_share_report(df)
         st.session_state.df_search_share = df_clean
         store.set("search_share", df_clean)
-        # 预计算搜索词趋势分析结果
         if not df_clean.empty:
             result = get_search_term_trend(df_clean)
             st.session_state.search_term_trend_result = result
             store.set("search_term_trend_result", result)
-        run_report_ingest(
-            "search_share",
-            "搜索词份额",
-            df,
-            search_share_file.name or "search_share.csv",
-            search_share_file.getvalue(),
-            maybe_ingest_search_share_upload,
-        )
+        try:
+            upload_id, _ = maybe_ingest_search_share_upload(
+                df,
+                source_filename=share_name,
+                file_content=share_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("搜索词份额已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"搜索词份额历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"搜索词份额历史入库失败：{e}")
+        mark_upload_file_processed("search_share", share_name, share_bytes)
 
 if product_report_file is None:
     clear_product_sponsored_ingest_fingerprint()
-    clear_ingest_feedback_for("product_sponsored")
-else:
-    df = load_report_file(product_report_file)
+    clear_upload_data_fingerprint("product_sponsored")
+elif not is_upload_file_unchanged(
+    "product_sponsored",
+    product_report_file.name or "product_sponsored.csv",
+    product_report_file.getvalue(),
+):
+    product_name = product_report_file.name or "product_sponsored.csv"
+    product_bytes = product_report_file.getvalue()
+    df = load_report_file(product_bytes, product_name)
     if df is not None:
         df_product_clean = clean_product_sponsored_report(df)
         st.session_state.df_product_sponsored = df_product_clean
@@ -307,43 +363,63 @@ else:
         store.set("product_sponsored_analysis_result", result)
         refresh_linkage_indexes(product_df=df_product_clean)
         if store.get("budget") is not None or store.get("placement") is not None:
-            recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
-        run_report_ingest(
-            "product_sponsored",
-            "推广的商品",
-            df,
-            product_report_file.name or "product_sponsored.csv",
-            product_report_file.getvalue(),
-            maybe_ingest_product_sponsored_upload,
-        )
+            _diagnosis_needs_recalc = True
+        try:
+            upload_id, _ = maybe_ingest_product_sponsored_upload(
+                df,
+                source_filename=product_name,
+                file_content=product_bytes,
+            )
+            if upload_id is not None:
+                st.sidebar.success("推广的商品已写入历史库。")
+        except ValueError as e:
+            st.sidebar.warning(f"推广的商品历史入库跳过：{e}")
+        except Exception as e:
+            st.sidebar.error(f"推广的商品历史入库失败：{e}")
+        mark_upload_file_processed("product_sponsored", product_name, product_bytes)
 
-if inventory_file is not None:
+if inventory_file is None:
+    clear_upload_data_fingerprint("inventory")
+elif not is_upload_file_unchanged(
+    "inventory", inventory_file.name or "inventory.csv", inventory_file.getvalue()
+):
+    inventory_name = inventory_file.name or "inventory.csv"
+    inventory_bytes = inventory_file.getvalue()
     try:
-        inventory_df = load_inventory_data(inventory_file, filename=inventory_file.name)
+        inventory_df = load_inventory_data(inventory_file, filename=inventory_name)
         st.session_state.df_inventory = inventory_df
         store.set("inventory", inventory_df)
         refresh_linkage_indexes(inventory_df=inventory_df)
         if store.get("budget") is not None or store.get("placement") is not None:
-            recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+            _diagnosis_needs_recalc = True
+        mark_upload_file_processed("inventory", inventory_name, inventory_bytes)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:
         st.error(f"库存报表加载失败：{e}")
 
-if business_file is not None:
+if business_file is None:
+    clear_upload_data_fingerprint("business")
+elif not is_upload_file_unchanged(
+    "business", business_file.name or "business.csv", business_file.getvalue()
+):
+    business_name = business_file.name or "business.csv"
+    business_bytes = business_file.getvalue()
     try:
-        business_df = load_business_data(business_file, filename=business_file.name)
+        business_df = load_business_data(business_file, filename=business_name)
         st.session_state.df_business = business_df
         store.set("business", business_df)
         refresh_linkage_indexes(business_df=business_df)
         if store.get("budget") is not None or store.get("placement") is not None:
-            recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
+            _diagnosis_needs_recalc = True
+        mark_upload_file_processed("business", business_name, business_bytes)
     except ValueError as e:
         st.error(str(e))
     except Exception as e:
         st.error(f"业务报表加载失败：{e}")
 
-render_ingest_feedback_sidebar()
+if _diagnosis_needs_recalc:
+    recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
 # 标签页
 tab1, tab_history, tab_ops, tab2 = st.tabs(
