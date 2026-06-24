@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import sqlite3
-import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterable
 
 from auth.user_context import get_current_user_id, get_user_data_dir
-from history.turso_config import get_turso_credentials, turso_configured, turso_url_candidates
+from history.turso_config import get_turso_credentials, turso_configured
+from history.turso_http import HttpExecuteResult, TursoHttpClient
 
 INIT_DB_SCRIPT = """
 CREATE TABLE IF NOT EXISTS uploads (
@@ -167,8 +167,6 @@ CREATE INDEX IF NOT EXISTS idx_ops_journal_event_date
     ON ops_journal(event_date);
 """
 
-_TURSO_RETRY_ATTEMPTS = 3
-_TURSO_RETRY_BASE_DELAY = 0.4
 _INIT_FLAGS: set[str] = set()
 
 
@@ -177,11 +175,13 @@ def get_db_path() -> Path:
 
 
 def _is_transient_turso_error(exc: BaseException) -> bool:
-    name = type(exc).__name__
-    if "Handshake" in name or "WSServerHandshakeError" in name:
-        return True
     msg = str(exc).lower()
-    return "handshake" in msg or "connection reset" in msg or "connection closed" in msg
+    return (
+        "handshake" in msg
+        or "timeout" in msg
+        or "temporarily" in msg
+        or "turso http" in msg
+    )
 
 
 class _DictRow(dict):
@@ -189,87 +189,37 @@ class _DictRow(dict):
 
 
 class _TursoCursor:
-    def __init__(self, result, lastrowid):
+    def __init__(self, result: HttpExecuteResult | None):
         self._result = result
-        self.lastrowid = lastrowid
+        self.lastrowid = result.last_insert_rowid if result else None
 
     def fetchall(self) -> list[_DictRow]:
-        if self._result is None or not getattr(self._result, "rows", None):
+        if self._result is None:
             return []
-        columns = getattr(self._result, "columns", None) or []
+        columns = self._result.columns
         rows: list[_DictRow] = []
         for row in self._result.rows:
-            if hasattr(row, "asdict"):
-                rows.append(_DictRow(row.asdict()))
-            elif isinstance(row, dict):
-                rows.append(_DictRow(row))
-            elif columns:
+            if columns:
                 rows.append(_DictRow(dict(zip(columns, row))))
             else:
-                rows.append(_DictRow({"value": row}))
+                rows.append(_DictRow({"value": row[0] if row else None}))
         return rows
 
 
 class _TursoConnection:
-    """libsql-client 远程连接；支持 batch 与重试。"""
+    """Turso SQL over HTTP（/v2/pipeline）。"""
 
     def __init__(self, url: str, token: str):
-        import libsql_client
-
-        self._libsql_client = libsql_client
-        self._url = url
-        self._token = token
-        self._client = self._create_client()
+        self._client = TursoHttpClient(url, token)
         self.row_factory = sqlite3.Row
 
-    def _create_client(self):
-        last_error: Exception | None = None
-        for candidate in turso_url_candidates(self._url):
-            try:
-                return self._libsql_client.create_client_sync(
-                    url=candidate,
-                    auth_token=self._token,
-                )
-            except Exception as exc:
-                last_error = exc
-                if not _is_transient_turso_error(exc):
-                    raise
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("无法创建 Turso 客户端")
-
-    def _recreate_client(self) -> None:
-        try:
-            self._client.close()
-        except Exception:
-            pass
-        self._client = self._create_client()
-
-    def _run(self, sql: str, parameters: Iterable[Any] | None = None):
-        last_error: Exception | None = None
-        for attempt in range(_TURSO_RETRY_ATTEMPTS):
-            try:
-                if parameters is None:
-                    return self._client.execute(sql)
-                return self._client.execute(sql, list(parameters))
-            except Exception as exc:
-                last_error = exc
-                if attempt >= _TURSO_RETRY_ATTEMPTS - 1 or not _is_transient_turso_error(exc):
-                    raise
-                self._recreate_client()
-                time.sleep(_TURSO_RETRY_BASE_DELAY * (attempt + 1))
-        if last_error is not None:
-            raise last_error
-        raise RuntimeError("Turso 执行失败")
-
     def execute(self, sql: str, parameters: Iterable[Any] | None = None) -> _TursoCursor:
-        result = self._run(sql, parameters)
-        return _TursoCursor(result, result.last_insert_rowid)
+        result = self._client.execute(sql, parameters)
+        return _TursoCursor(result)
 
     def executemany(self, sql: str, seq_of_parameters: Iterable[Iterable[Any]]) -> _TursoCursor:
-        for params in seq_of_parameters:
-            self.execute(sql, params)
-        return _TursoCursor(None, None)
+        result = self._client.execute_many(sql, seq_of_parameters)
+        return _TursoCursor(result)
 
     def executescript(self, sql_script: str) -> None:
         statements = _split_sql_script(sql_script)
@@ -278,21 +228,7 @@ class _TursoConnection:
         if len(statements) == 1:
             self.execute(statements[0])
             return
-
-        last_error: Exception | None = None
-        for attempt in range(_TURSO_RETRY_ATTEMPTS):
-            try:
-                self._client.batch(statements)
-                return
-            except Exception as exc:
-                last_error = exc
-                if attempt >= _TURSO_RETRY_ATTEMPTS - 1 or not _is_transient_turso_error(exc):
-                    break
-                self._recreate_client()
-                time.sleep(_TURSO_RETRY_BASE_DELAY * (attempt + 1))
-
-        for statement in statements:
-            self.execute(statement)
+        self._client.execute_batch(statements)
 
     def commit(self) -> None:
         return None
@@ -301,10 +237,7 @@ class _TursoConnection:
         return None
 
     def close(self) -> None:
-        try:
-            self._client.close()
-        except Exception:
-            pass
+        self._client.close()
 
 
 def _split_sql_script(sql_script: str) -> list[str]:
@@ -326,7 +259,7 @@ def _get_cached_turso_connection(user_id: str, url: str) -> _TursoConnection | N
 
         conn = st.session_state.get(_turso_session_cache_key(user_id, url))
         if isinstance(conn, _TursoConnection):
-            if getattr(conn._client, "closed", False):
+            if conn._client.closed:
                 return None
             return conn
     except Exception:

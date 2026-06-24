@@ -27,6 +27,18 @@ def turso_configured() -> bool:
     return bool(os.environ.get("TURSO_DATABASE_URL") and os.environ.get("TURSO_AUTH_TOKEN"))
 
 
+def turso_http_base_url(url: str) -> str:
+    """libsql://... → https://..."""
+    url = str(url).strip().rstrip("/")
+    if url.startswith("libsql://"):
+        return "https://" + url[len("libsql://") :]
+    if url.startswith("http://"):
+        return "https://" + url[len("http://") :]
+    if url.startswith("https://"):
+        return url
+    return "https://" + url
+
+
 def turso_url_candidates(url: str) -> list[str]:
     """libsql-client 可尝试的 URL 形式。"""
     url = str(url).strip().rstrip("/")
