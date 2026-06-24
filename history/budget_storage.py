@@ -7,6 +7,7 @@ import pandas as pd
 
 from history.database import get_connection, init_db
 from history.upload_ingest import insert_upload_with_daily_rows
+from utils.date_parse import coerce_report_dates
 
 REPORT_TYPE_BUDGET = "budget"
 
@@ -34,7 +35,7 @@ def _clean_budget_df(df: pd.DataFrame) -> pd.DataFrame:
     df_clean = df.copy()
     df_clean["预算"] = clean_series(df_clean[col_budget])
     df_clean["花费"] = clean_series(df_clean[col_spent])
-    df_clean["日期"] = pd.to_datetime(df_clean[col_date], errors="coerce")
+    df_clean, _ = coerce_report_dates(df_clean, col_date)
     df_clean = df_clean.dropna(subset=["日期", "预算", "花费"])
     if df_clean.empty:
         return df_clean

@@ -4,6 +4,7 @@ import numpy as np
 import streamlit as st
 from typing import Dict, Any
 from data_df_store.data_store import store
+from utils.date_parse import coerce_report_dates, maybe_warn_date_parse_failures
 
 # ---------- 清洗函数 ----------
 def to_float(series):
@@ -57,8 +58,8 @@ KEYWORD_GROUP_KEYS = ["广告活动名称", "广告组名称", "投放", "匹配
 def clean_keyword_report(df: pd.DataFrame) -> pd.DataFrame:
     """清洗投放词报表"""
     df_clean = df.copy()
-    if '日期' in df_clean.columns:
-        df_clean['日期'] = pd.to_datetime(df_clean['日期'], errors='coerce')
+    df_clean, date_failed = coerce_report_dates(df_clean, "日期")
+    maybe_warn_date_parse_failures(date_failed, "投放词报表")
 
     df_clean['展示量'] = pd.to_numeric(df_clean['展示量'], errors='coerce')
     df_clean['点击量'] = pd.to_numeric(df_clean['点击量'], errors='coerce')

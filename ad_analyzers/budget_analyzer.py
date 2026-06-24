@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from data_df_store.data_store import store
+from utils.date_parse import coerce_report_dates, maybe_warn_date_parse_failures
 
 
 def max_consecutive_over_threshold(
@@ -74,7 +75,8 @@ def get_budget_analysis(
     df_clean = df.copy()
     df_clean['预算'] = clean_series(df_clean[col_budget])
     df_clean['花费'] = clean_series(df_clean[col_spent])
-    df_clean['日期'] = pd.to_datetime(df_clean[col_date], errors='coerce')
+    df_clean, date_failed = coerce_report_dates(df_clean, col_date)
+    maybe_warn_date_parse_failures(date_failed, "预算报表")
     df_clean = df_clean.dropna(subset=['日期', '预算', '花费'])
 
     if df_clean.empty:

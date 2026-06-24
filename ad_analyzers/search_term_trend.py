@@ -3,6 +3,7 @@ import numpy as np
 import streamlit as st
 from typing import Dict, Any
 from data_df_store.data_store import store
+from utils.date_parse import coerce_report_dates, maybe_warn_date_parse_failures, parse_report_date_series
 
 
 # ---------- 通用清洗函数 ----------
@@ -166,7 +167,8 @@ def clean_search_share_report(df: pd.DataFrame, *, for_storage: bool = False) ->
         st.error(msg)
         return pd.DataFrame()
 
-    df_clean['date'] = pd.to_datetime(df_clean['date'], errors='coerce')
+    df_clean, date_failed = coerce_report_dates(df_clean, "date", output_column="date")
+    maybe_warn_date_parse_failures(date_failed, "搜索词份额报告")
     df_clean['spend'] = to_float(df_clean['spend'])
     df_clean['sales'] = to_float(df_clean['sales'])
     df_clean['clicks'] = pd.to_numeric(df_clean['clicks'], errors='coerce')
@@ -267,7 +269,7 @@ def render_search_term_trend_result(result: dict, *, key_prefix: str = "trend") 
             return "低份额低排名 (待优化)"
 
         trend_df["广告表现象限"] = trend_df.apply(classify, axis=1)
-        trend_df["date"] = pd.to_datetime(trend_df["date"]).dt.strftime("%Y-%m-%d")
+        trend_df["date"] = parse_report_date_series(trend_df["date"]).dt.strftime("%Y-%m-%d")
         if "impression_share" in trend_df.columns:
             trend_df["impression_share"] = trend_df["impression_share"].apply(
                 lambda x: f"{x:.1%}" if pd.notna(x) else "-"
@@ -313,7 +315,7 @@ def render_search_term_trend_result(result: dict, *, key_prefix: str = "trend") 
     if attribution:
         attr_df = pd.DataFrame(attribution)
         if "date" in attr_df.columns:
-            attr_df["date"] = pd.to_datetime(attr_df["date"]).dt.strftime("%Y-%m-%d")
+            attr_df["date"] = parse_report_date_series(attr_df["date"]).dt.strftime("%Y-%m-%d")
         if "spend" in attr_df.columns:
             attr_df["spend"] = attr_df["spend"].apply(lambda x: f"{x:.2f}")
         if "sales" in attr_df.columns:

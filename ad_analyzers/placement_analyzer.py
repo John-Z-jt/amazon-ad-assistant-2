@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import streamlit as st
 from data_df_store.data_store import store
+from utils.date_parse import coerce_report_dates, maybe_warn_date_parse_failures
 
 def clean_placement_data(df: pd.DataFrame) -> pd.DataFrame:
     """清洗广告位报表，转换数值列并计算点击率。
@@ -16,13 +17,8 @@ def clean_placement_data(df: pd.DataFrame) -> pd.DataFrame:
         None
     """
     df_clean = df.copy()
-
-    # 日期转换（假设列名为'日期'）
-    if '日期' in df_clean.columns:
-        df_clean['日期'] = pd.to_datetime(df_clean['日期'], errors='coerce')
-    else:
-        # 如果没有日期列，跳过（但广告位报表通常有日期）
-        pass
+    df_clean, date_failed = coerce_report_dates(df_clean, "日期")
+    maybe_warn_date_parse_failures(date_failed, "广告位报表")
 
     def to_float(series):
         """将 Series 清洗并转换为浮点数。
@@ -160,9 +156,10 @@ def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
                 '整体ACOS': row['整体ACOS']
             })
 
-    # 每日明细
+    # 每日明细（排除日期无法解析的行）
     daily_details = {}
-    for (act, placement), group in df_clean.groupby(['广告活动名称', '放置']):
+    df_dated = df_clean.dropna(subset=['日期']) if '日期' in df_clean.columns else df_clean
+    for (act, placement), group in df_dated.groupby(['广告活动名称', '放置']):
         daily = group[['日期', '花费_数值', '7天总销售额_数值', '点击率', 'ACOS_数值']].copy()
         daily = daily.sort_values('日期')
         daily.rename(columns={

@@ -15,6 +15,7 @@ from diagnosis.metrics import (
     count_stat_days,
     get_campaign_date_range,
 )
+from utils.date_parse import parse_report_date_series
 
 
 CONCLUSION_LABELS = {
@@ -163,7 +164,7 @@ def _evaluate_campaign_row(
             )
 
     if product_df is not None and date_start is not None and "日期" in product_df.columns:
-        prod_dates = pd.to_datetime(product_df["日期"], errors="coerce").dropna()
+        prod_dates = parse_report_date_series(product_df["日期"]).dropna()
         if not prod_dates.empty:
             if prod_dates.min().normalize() > date_start or prod_dates.max().normalize() < date_end:
                 warn = f"活动「{campaign}」推广的商品日期范围与预算报表不完全一致"

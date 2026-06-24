@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 
 from diagnosis.config import DiagnosisConfig
+from utils.date_parse import parse_report_date_series
 
 
 def count_stat_days(budget_df: pd.DataFrame, campaign: str, date_col: str = "日期") -> int:
@@ -13,7 +14,7 @@ def count_stat_days(budget_df: pd.DataFrame, campaign: str, date_col: str = "日
     subset = budget_df[budget_df["广告活动名称"] == campaign].copy()
     if subset.empty:
         return 0
-    dates = pd.to_datetime(subset[date_col], errors="coerce").dropna()
+    dates = parse_report_date_series(subset[date_col]).dropna()
     return int(dates.dt.normalize().nunique())
 
 
@@ -23,7 +24,7 @@ def get_campaign_date_range(budget_df: pd.DataFrame, campaign: str, date_col: st
     subset = budget_df[budget_df["广告活动名称"] == campaign].copy()
     if subset.empty or date_col not in subset.columns:
         return None, None
-    dates = pd.to_datetime(subset[date_col], errors="coerce").dropna()
+    dates = parse_report_date_series(subset[date_col]).dropna()
     if dates.empty:
         return None, None
     return dates.min().normalize(), dates.max().normalize()
@@ -69,7 +70,7 @@ def calc_campaign_acos(
         return None
 
     if "日期" in subset.columns and date_start is not None and date_end is not None:
-        subset["日期"] = pd.to_datetime(subset["日期"], errors="coerce")
+        subset["日期"] = parse_report_date_series(subset["日期"])
         subset = subset[(subset["日期"] >= date_start) & (subset["日期"] <= date_end)]
 
     if subset.empty:

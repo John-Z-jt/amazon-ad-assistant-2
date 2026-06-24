@@ -22,6 +22,7 @@ from diagnosis.placement_utils import (
     is_search_performance_good,
     search_metrics_unable,
 )
+from utils.date_parse import parse_report_date_series
 
 
 PLACEMENT_CONCLUSION_LABELS = {
@@ -120,7 +121,7 @@ def _get_stat_days(campaign: str, budget_df: pd.DataFrame | None, placement_df: 
     subset = placement_df[placement_df["广告活动名称"] == campaign]
     if subset.empty or "日期" not in subset.columns:
         return 0
-    dates = pd.to_datetime(subset["日期"], errors="coerce").dropna()
+    dates = parse_report_date_series(subset["日期"]).dropna()
     return int(dates.dt.normalize().nunique())
 
 
