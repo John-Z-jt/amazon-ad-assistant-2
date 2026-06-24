@@ -320,7 +320,7 @@ def _turso_session_cache_key(user_id: str, url: str) -> str:
     return f"_turso_conn_{user_id}_{hash(url)}"
 
 
-def _get_cached_turso_connection(user_id: str, url: str, token: str) -> _TursoConnection | None:
+def _get_cached_turso_connection(user_id: str, url: str) -> _TursoConnection | None:
     try:
         import streamlit as st
 
