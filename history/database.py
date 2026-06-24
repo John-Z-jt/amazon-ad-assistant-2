@@ -169,6 +169,11 @@ CREATE INDEX IF NOT EXISTS idx_ops_journal_event_date
 
 _INIT_FLAGS: set[str] = set()
 
+UPLOAD_INSERT_SQL = """
+INSERT INTO uploads (report_type, uploaded_at, period_start, period_end, source_filename)
+VALUES (?, ?, ?, ?, ?)
+"""
+
 
 def get_db_path() -> Path:
     return get_user_data_dir() / "ad_history.db"

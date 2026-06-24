@@ -63,9 +63,22 @@ SEARCH_SHARE_INGEST_FP_KEY = "search_share_ingest_fingerprint"
 PRODUCT_SPONSORED_INGEST_FP_KEY = "product_sponsored_ingest_fingerprint"
 
 
-def _upload_data_fingerprint(df, source_filename: str) -> str:
-    payload = f"{source_filename}\n{df.to_csv(index=False)}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+def _upload_data_fingerprint(
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+    df=None,
+) -> str:
+    if file_content is not None:
+        digest = hashlib.sha256()
+        digest.update(source_filename.encode("utf-8"))
+        digest.update(b"\n")
+        digest.update(file_content)
+        return digest.hexdigest()
+    if df is not None:
+        payload = f"{source_filename}\n{df.to_csv(index=False)}"
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    raise ValueError("需要 file_content 或 df 才能计算上传指纹")
 
 
 def clear_budget_ingest_fingerprint() -> None:
@@ -160,12 +173,17 @@ def _apply_upload_deletions(upload_ids: list[int], uploads: list[dict]) -> int:
     return len(to_delete)
 
 
-def maybe_ingest_budget_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_budget_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     """同一文件在 uploader 中停留时，仅首次写入历史库（避免 Streamlit rerun 重复入库）。"""
     from history.budget_storage import ingest_budget_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(BUDGET_INGEST_FP_KEY) == fp:
         return None
 
@@ -175,11 +193,16 @@ def maybe_ingest_budget_upload(df, source_filename: str) -> int | None:
     return upload_id
 
 
-def maybe_ingest_placement_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_placement_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     from history.placement_storage import ingest_placement_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(PLACEMENT_INGEST_FP_KEY) == fp:
         return None
 
@@ -189,11 +212,16 @@ def maybe_ingest_placement_upload(df, source_filename: str) -> int | None:
     return upload_id
 
 
-def maybe_ingest_keyword_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_keyword_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     from history.keyword_storage import ingest_keyword_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(KEYWORD_INGEST_FP_KEY) == fp:
         return None
 
@@ -203,11 +231,16 @@ def maybe_ingest_keyword_upload(df, source_filename: str) -> int | None:
     return upload_id
 
 
-def maybe_ingest_search_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_search_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     from history.search_storage import ingest_search_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(SEARCH_INGEST_FP_KEY) == fp:
         return None
 
@@ -217,11 +250,16 @@ def maybe_ingest_search_upload(df, source_filename: str) -> int | None:
     return upload_id
 
 
-def maybe_ingest_search_share_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_search_share_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     from history.search_share_storage import ingest_search_share_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(SEARCH_SHARE_INGEST_FP_KEY) == fp:
         return None
 
@@ -231,11 +269,16 @@ def maybe_ingest_search_share_upload(df, source_filename: str) -> int | None:
     return upload_id
 
 
-def maybe_ingest_product_sponsored_upload(df, source_filename: str) -> int | None:
+def maybe_ingest_product_sponsored_upload(
+    df,
+    source_filename: str,
+    *,
+    file_content: bytes | None = None,
+) -> int | None:
     from history.product_sponsored_storage import ingest_product_sponsored_upload
 
     _init_session_upload_state()
-    fp = _upload_data_fingerprint(df, source_filename)
+    fp = _upload_data_fingerprint(source_filename, file_content=file_content, df=df)
     if st.session_state.get(PRODUCT_SPONSORED_INGEST_FP_KEY) == fp:
         return None
 

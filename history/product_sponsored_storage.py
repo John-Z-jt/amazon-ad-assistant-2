@@ -7,6 +7,7 @@ import pandas as pd
 from ad_analyzers.product_sponserd_analyzer import clean_product_sponsored_report
 from history.budget_storage import _date_range_list
 from history.database import get_connection, init_db
+from history.upload_ingest import insert_upload_with_daily_rows
 
 REPORT_TYPE_PRODUCT_SPONSORED = "product_sponsored"
 
@@ -33,23 +34,8 @@ def ingest_product_sponsored_upload(df: pd.DataFrame, source_filename: str) -> i
     period_end = cleaned["日期"].max().strftime("%Y-%m-%d")
     uploaded_at = datetime.now().isoformat(timespec="seconds")
 
-    with get_connection() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO uploads (report_type, uploaded_at, period_start, period_end, source_filename)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                REPORT_TYPE_PRODUCT_SPONSORED,
-                uploaded_at,
-                period_start,
-                period_end,
-                source_filename,
-            ),
-        )
-        upload_id = int(cur.lastrowid)
-
-        rows = []
+    def build_rows(upload_id: int) -> list[tuple]:
+        rows: list[tuple] = []
         for _, row in cleaned.iterrows():
             rows.append(
                 (
@@ -72,9 +58,17 @@ def ingest_product_sponsored_upload(df: pd.DataFrame, source_filename: str) -> i
                     _null_float(row.get("ROAS")),
                 )
             )
+        return rows
 
-        conn.executemany(
-            """
+    with get_connection() as conn:
+        upload_id = insert_upload_with_daily_rows(
+            conn,
+            report_type=REPORT_TYPE_PRODUCT_SPONSORED,
+            uploaded_at=uploaded_at,
+            period_start=period_start,
+            period_end=period_end,
+            source_filename=source_filename,
+            daily_sql="""
             INSERT INTO product_sponsored_daily (
                 upload_id, campaign_name, ad_group_name, asin, sku, date,
                 impressions, clicks, ctr, cpc, spend, sales, acos,
@@ -82,7 +76,7 @@ def ingest_product_sponsored_upload(df: pd.DataFrame, source_filename: str) -> i
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            build_rows=build_rows,
         )
 
     return upload_id

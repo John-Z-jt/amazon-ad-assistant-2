@@ -6,6 +6,7 @@ from typing import Any
 import pandas as pd
 
 from history.database import get_connection, init_db
+from history.upload_ingest import insert_upload_with_daily_rows
 
 REPORT_TYPE_BUDGET = "budget"
 
@@ -53,17 +54,8 @@ def ingest_budget_upload(df: pd.DataFrame, source_filename: str) -> int:
     period_end = cleaned["日期"].max().strftime("%Y-%m-%d")
     uploaded_at = datetime.now().isoformat(timespec="seconds")
 
-    with get_connection() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO uploads (report_type, uploaded_at, period_start, period_end, source_filename)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (REPORT_TYPE_BUDGET, uploaded_at, period_start, period_end, source_filename),
-        )
-        upload_id = int(cur.lastrowid)
-
-        rows = []
+    def build_rows(upload_id: int) -> list[tuple]:
+        rows: list[tuple] = []
         for _, row in cleaned.iterrows():
             usage = row.get("使用率")
             usage_val = None if pd.isna(usage) else float(usage)
@@ -77,13 +69,21 @@ def ingest_budget_upload(df: pd.DataFrame, source_filename: str) -> int:
                     usage_val,
                 )
             )
+        return rows
 
-        conn.executemany(
-            """
+    with get_connection() as conn:
+        upload_id = insert_upload_with_daily_rows(
+            conn,
+            report_type=REPORT_TYPE_BUDGET,
+            uploaded_at=uploaded_at,
+            period_start=period_start,
+            period_end=period_end,
+            source_filename=source_filename,
+            daily_sql="""
             INSERT INTO budget_daily (upload_id, campaign_name, date, budget, spend, usage_rate)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            build_rows=build_rows,
         )
 
     return upload_id

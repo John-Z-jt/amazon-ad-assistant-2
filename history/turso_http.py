@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import numbers
 import time
 import urllib.error
 import urllib.request
@@ -12,17 +13,24 @@ from history.turso_config import turso_http_base_url
 
 _RETRY_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 0.4
+_PIPELINE_CHUNK_SIZE = 250
+_PIPELINE_TIMEOUT_SEC = 120
 
 
 def _encode_arg(value: Any) -> dict[str, Any]:
     if value is None:
         return {"type": "null"}
+    if hasattr(value, "item") and not isinstance(value, (bytes, str)):
+        try:
+            value = value.item()
+        except (ValueError, AttributeError):
+            pass
     if isinstance(value, bool):
         return {"type": "integer", "value": "1" if value else "0"}
-    if isinstance(value, int):
-        return {"type": "integer", "value": str(value)}
-    if isinstance(value, float):
-        return {"type": "float", "value": str(value)}
+    if isinstance(value, numbers.Integral):
+        return {"type": "integer", "value": str(int(value))}
+    if isinstance(value, numbers.Real):
+        return {"type": "float", "value": str(float(value))}
     if isinstance(value, bytes):
         return {"type": "blob", "base64": base64.b64encode(value).decode("ascii")}
     return {"type": "text", "value": str(value)}
@@ -76,7 +84,12 @@ class TursoHttpClient:
         msg = str(exc).lower()
         return "timeout" in msg or "temporarily" in msg
 
-    def _post_pipeline(self, requests: list[dict[str, Any]]) -> dict[str, Any]:
+    def _post_pipeline(
+        self,
+        requests: list[dict[str, Any]],
+        *,
+        timeout: int = _PIPELINE_TIMEOUT_SEC,
+    ) -> dict[str, Any]:
         payload_bytes = json.dumps({"requests": requests}).encode("utf-8")
         last_error: Exception | None = None
         for attempt in range(_RETRY_ATTEMPTS):
@@ -90,7 +103,7 @@ class TursoHttpClient:
                 method="POST",
             )
             try:
-                with urllib.request.urlopen(req, timeout=60) as resp:
+                with urllib.request.urlopen(req, timeout=timeout) as resp:
                     body = resp.read().decode("utf-8")
                 return json.loads(body)
             except urllib.error.HTTPError as exc:
@@ -111,7 +124,8 @@ class TursoHttpClient:
         raise RuntimeError("Turso HTTP 请求失败")
 
     def _parse_execute_result(self, result_item: dict[str, Any]) -> HttpExecuteResult:
-        if result_item.get("type") == "error":
+        item_type = result_item.get("type")
+        if item_type == "error":
             raise RuntimeError(f"Turso SQL 错误: {result_item.get('error', result_item)}")
 
         response = result_item.get("response") or {}
@@ -131,19 +145,50 @@ class TursoHttpClient:
         last_insert_rowid = int(last_id) if last_id is not None else None
         return HttpExecuteResult(columns, rows, last_insert_rowid)
 
+    def _stmt_request(self, sql: str, parameters: Iterable[Any] | None = None) -> dict[str, Any]:
+        stmt: dict[str, Any] = {"sql": sql}
+        if parameters is not None:
+            stmt["args"] = [_encode_arg(value) for value in parameters]
+        return {"type": "execute", "stmt": stmt}
+
+    def execute_pipeline(
+        self,
+        statements: list[tuple[str, Iterable[Any] | None]],
+        *,
+        chunk_size: int = _PIPELINE_CHUNK_SIZE,
+    ) -> list[HttpExecuteResult]:
+        """在同一条 Turso stream 上批量执行多条 SQL（按 chunk 拆分以避免 payload 过大）。"""
+        if self._closed:
+            raise RuntimeError("Turso HTTP 连接已关闭")
+        if not statements:
+            return []
+
+        all_results: list[HttpExecuteResult] = []
+        for offset in range(0, len(statements), chunk_size):
+            chunk = statements[offset : offset + chunk_size]
+            requests = [self._stmt_request(sql, params) for sql, params in chunk]
+            requests.append({"type": "close"})
+            payload = self._post_pipeline(requests)
+            for item in payload.get("results") or []:
+                if item.get("type") == "error":
+                    raise RuntimeError(f"Turso SQL 错误: {item.get('error', item)}")
+                response_type = item.get("response", {}).get("type")
+                if response_type == "execute":
+                    all_results.append(self._parse_execute_result(item))
+                elif response_type == "close":
+                    break
+        return all_results
+
     def execute(self, sql: str, parameters: Iterable[Any] | None = None) -> HttpExecuteResult:
         if self._closed:
             raise RuntimeError("Turso HTTP 连接已关闭")
 
-        stmt: dict[str, Any] = {"sql": sql}
-        if parameters is not None:
-            stmt["args"] = [_encode_arg(value) for value in parameters]
-
         payload = self._post_pipeline(
             [
-                {"type": "execute", "stmt": stmt},
+                self._stmt_request(sql, parameters),
                 {"type": "close"},
-            ]
+            ],
+            timeout=60,
         )
         results = payload.get("results") or []
         if not results:
@@ -151,10 +196,12 @@ class TursoHttpClient:
         return self._parse_execute_result(results[0])
 
     def execute_many(self, sql: str, seq_of_parameters: Iterable[Iterable[Any]]) -> HttpExecuteResult | None:
-        last_result: HttpExecuteResult | None = None
-        for params in seq_of_parameters:
-            last_result = self.execute(sql, params)
-        return last_result
+        params_list = list(seq_of_parameters)
+        if not params_list:
+            return None
+        statements = [(sql, params) for params in params_list]
+        results = self.execute_pipeline(statements)
+        return results[-1] if results else None
 
     def execute_batch(self, statements: list[str]) -> None:
         if not statements:

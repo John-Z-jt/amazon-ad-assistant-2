@@ -7,6 +7,7 @@ import pandas as pd
 from ad_analyzers.search_analyzer import clean_search_report
 from history.budget_storage import _date_range_list
 from history.database import get_connection, init_db
+from history.upload_ingest import insert_upload_with_daily_rows
 
 REPORT_TYPE_SEARCH = "search"
 
@@ -33,17 +34,8 @@ def ingest_search_upload(df: pd.DataFrame, source_filename: str) -> int:
     period_end = cleaned["日期"].max().strftime("%Y-%m-%d")
     uploaded_at = datetime.now().isoformat(timespec="seconds")
 
-    with get_connection() as conn:
-        cur = conn.execute(
-            """
-            INSERT INTO uploads (report_type, uploaded_at, period_start, period_end, source_filename)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (REPORT_TYPE_SEARCH, uploaded_at, period_start, period_end, source_filename),
-        )
-        upload_id = int(cur.lastrowid)
-
-        rows = []
+    def build_rows(upload_id: int) -> list[tuple]:
+        rows: list[tuple] = []
         for _, row in cleaned.iterrows():
             rows.append(
                 (
@@ -65,16 +57,24 @@ def ingest_search_upload(df: pd.DataFrame, source_filename: str) -> int:
                     _null_float(row.get("ACOS_数值")),
                 )
             )
+        return rows
 
-        conn.executemany(
-            """
+    with get_connection() as conn:
+        upload_id = insert_upload_with_daily_rows(
+            conn,
+            report_type=REPORT_TYPE_SEARCH,
+            uploaded_at=uploaded_at,
+            period_start=period_start,
+            period_end=period_end,
+            source_filename=source_filename,
+            daily_sql="""
             INSERT INTO search_daily (
                 upload_id, campaign_name, ad_group_name, target_keyword, match_type,
                 search_term, date, impressions, clicks, ctr, orders, cvr, cpc, spend, sales, acos
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            rows,
+            build_rows=build_rows,
         )
 
     return upload_id

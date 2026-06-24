@@ -171,7 +171,11 @@ else:
         store.set("budget", df)
         st.session_state.df_budget = df
         try:
-            upload_id = maybe_ingest_budget_upload(df, source_filename=budget_file.name or "budget.csv")
+            upload_id = maybe_ingest_budget_upload(
+                df,
+                source_filename=budget_file.name or "budget.csv",
+                file_content=budget_file.getvalue(),
+            )
             if upload_id is not None:
                 st.sidebar.success("预算已写入历史库。")
         except ValueError as e:
@@ -193,7 +197,9 @@ else:
         store.set("placement_analysis_result", result)
         try:
             upload_id = maybe_ingest_placement_upload(
-                df, source_filename=placement_file.name or "placement.csv"
+                df,
+                source_filename=placement_file.name or "placement.csv",
+                file_content=placement_file.getvalue(),
             )
             if upload_id is not None:
                 st.sidebar.success("广告位已写入历史库。")
@@ -217,7 +223,9 @@ else:
         store.set("keyword_analysis_result", result)
         try:
             upload_id = maybe_ingest_keyword_upload(
-                df, source_filename=keyword_file.name or "keyword.csv"
+                df,
+                source_filename=keyword_file.name or "keyword.csv",
+                file_content=keyword_file.getvalue(),
             )
             if upload_id is not None:
                 st.sidebar.success("投放词已写入历史库。")
@@ -241,7 +249,9 @@ else:
         store.set("search_analysis_result", result)
         try:
             upload_id = maybe_ingest_search_upload(
-                df, source_filename=search_file.name or "search.csv"
+                df,
+                source_filename=search_file.name or "search.csv",
+                file_content=search_file.getvalue(),
             )
             if upload_id is not None:
                 st.sidebar.success("搜索词已写入历史库。")
@@ -266,7 +276,9 @@ else:
             store.set("search_term_trend_result", result)
         try:
             upload_id = maybe_ingest_search_share_upload(
-                df, source_filename=search_share_file.name or "search_share.csv"
+                df,
+                source_filename=search_share_file.name or "search_share.csv",
+                file_content=search_share_file.getvalue(),
             )
             if upload_id is not None:
                 st.sidebar.success("搜索词份额已写入历史库。")
@@ -291,7 +303,9 @@ else:
             recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
         try:
             upload_id = maybe_ingest_product_sponsored_upload(
-                df, source_filename=product_report_file.name or "product_sponsored.csv"
+                df,
+                source_filename=product_report_file.name or "product_sponsored.csv",
+                file_content=product_report_file.getvalue(),
             )
             if upload_id is not None:
                 st.sidebar.success("推广的商品已写入历史库。")
