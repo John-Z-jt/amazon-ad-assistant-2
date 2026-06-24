@@ -30,7 +30,7 @@ def _encode_arg(value: Any) -> dict[str, Any]:
     if isinstance(value, numbers.Integral):
         return {"type": "integer", "value": str(int(value))}
     if isinstance(value, numbers.Real):
-        return {"type": "float", "value": str(float(value))}
+        return {"type": "float", "value": float(value)}
     if isinstance(value, bytes):
         return {"type": "blob", "base64": base64.b64encode(value).decode("ascii")}
     return {"type": "text", "value": str(value)}
