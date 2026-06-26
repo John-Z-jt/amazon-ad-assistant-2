@@ -163,6 +163,11 @@ def invalidate_uploads_list_cache() -> None:
     cached_list_all_uploads.clear()
 
 
+def _on_upload_ingested(upload_id: int) -> None:
+    register_session_upload(upload_id)
+    invalidate_uploads_list_cache()
+
+
 IngestStatus = Literal["ingested", "skipped"]
 
 
@@ -256,7 +261,7 @@ def maybe_ingest_budget_upload(
 
     upload_id = ingest_budget_upload(df, source_filename=source_filename)
     st.session_state[BUDGET_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
@@ -275,7 +280,7 @@ def maybe_ingest_placement_upload(
 
     upload_id = ingest_placement_upload(df, source_filename=source_filename)
     st.session_state[PLACEMENT_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
@@ -294,7 +299,7 @@ def maybe_ingest_keyword_upload(
 
     upload_id = ingest_keyword_upload(df, source_filename=source_filename)
     st.session_state[KEYWORD_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
@@ -313,7 +318,7 @@ def maybe_ingest_search_upload(
 
     upload_id = ingest_search_upload(df, source_filename=source_filename)
     st.session_state[SEARCH_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
@@ -332,7 +337,7 @@ def maybe_ingest_search_share_upload(
 
     upload_id = ingest_search_share_upload(df, source_filename=source_filename)
     st.session_state[SEARCH_SHARE_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
@@ -351,7 +356,7 @@ def maybe_ingest_product_sponsored_upload(
 
     upload_id = ingest_product_sponsored_upload(df, source_filename=source_filename)
     st.session_state[PRODUCT_SPONSORED_INGEST_FP_KEY] = fp
-    register_session_upload(upload_id)
+    _on_upload_ingested(upload_id)
     return upload_id, "ingested"
 
 
