@@ -1,3 +1,7 @@
+"""入库公共逻辑：先写 uploads 批次，再批量写 daily 明细。
+
+Turso 下若 executemany 失败，会尝试删除刚插入的 upload 行，避免孤儿批次。
+"""
 from __future__ import annotations
 
 from collections.abc import Callable

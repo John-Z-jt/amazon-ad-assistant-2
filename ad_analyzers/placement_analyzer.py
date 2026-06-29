@@ -1,3 +1,11 @@
+"""广告位报表清洗、汇总分析与 Streamlit 展示。
+
+输出结构（get_placement_analysis）
+---------------------------------
+- summary: 按 (活动, 放置) 聚合展示量/点击/订单/花费/ACOS
+- daily_details: 每个 (活动, 放置) 的按日明细
+- top/worst_placements_by_activity: 每活动 ACOS 最低/最高放置（供 Agent 摘要）
+"""
 import pandas as pd
 import numpy as np
 import streamlit as st
@@ -106,14 +114,7 @@ def clean_placement_data(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(ttl=3600)
 def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
-    """
-    输入已清洗的广告位DataFrame（必须包含日期列）
-    返回：
-    - summary: 按（广告活动名称，放置）分组的汇总表（records格式）
-    - top_placements: 表现最佳广告位（按平均ACOS升序）
-    - worst_placements: 表现最差广告位（按平均ACOS降序）
-    - daily_details: 字典，key为 (广告活动名称, 放置) 元组，value为每日明细的records列表
-    """
+    """汇总广告位数据：按 (活动, 放置) 求和后再算整体 CTR/CVR/ACOS（非 ACOS 平均）。"""
     if df_clean is None or df_clean.empty:
         return {"summary": [], "top_placements": [], "worst_placements": [], "daily_details": {}}
 
@@ -142,6 +143,7 @@ def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
         summary_df['总订单数'] / summary_df['总点击量'],
         np.nan,
     )
+    # 整体 ACOS = 总花费 / 总销售额（先聚合再除，避免对日 ACOS 做平均）
     summary_df['整体ACOS'] = summary_df['总花费'] / summary_df['总销售额']
     summary_df['整体ACOS'] = summary_df['整体ACOS'].replace([np.inf, -np.inf], np.nan)
 
@@ -195,7 +197,7 @@ def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
 
 
 def render_placement_analysis_result(result: dict, *, key_prefix: str = "placement") -> None:
-    """展示广告位分析结果（与 analyze_placement 相同 UI，可指定 widget key 前缀）。"""
+    """展示汇总表、每活动最佳/最差放置、以及筛选后的每日明细。"""
     if result.get("error"):
         st.warning(result["error"])
         return

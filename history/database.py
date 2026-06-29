@@ -1,3 +1,10 @@
+"""历史库连接层：本地 SQLite 与 Turso HTTP 双后端。
+
+- 未配置 Turso 时：每用户目录下 ``ad_history.db``，``get_connection`` 用完即关。
+- 配置 Turso 后：走 HTTP pipeline；连接缓存在 ``st.session_state``（按 user+url），
+   transient 错误时 invalidate 缓存并重连。
+- ``init_db`` 用 session/进程 flag 避免每次请求重复建表。
+"""
 from __future__ import annotations
 
 import sqlite3
@@ -176,10 +183,12 @@ VALUES (?, ?, ?, ?, ?)
 
 
 def get_db_path() -> Path:
+    """本地 SQLite 路径（仅 turso 未启用时使用）。"""
     return get_user_data_dir() / "ad_history.db"
 
 
 def _is_transient_turso_error(exc: BaseException) -> bool:
+    """握手/超时类错误：invalidate 连接缓存后下次 get_connection 会重建。"""
     msg = str(exc).lower()
     return (
         "handshake" in msg
@@ -247,6 +256,7 @@ class _TursoConnection:
 
 
 def _split_sql_script(sql_script: str) -> list[str]:
+    """按分号拆分 DDL；Turso pipeline 需逐条提交。"""
     statements: list[str] = []
     for part in sql_script.split(";"):
         stmt = part.strip()
@@ -352,6 +362,7 @@ def _mark_db_initialized() -> None:
 
 @contextmanager
 def get_connection():
+    """统一数据库上下文：自动 commit；Turso 连接会话内复用，SQLite 每次新建。"""
     if turso_configured():
         creds = get_turso_credentials()
         if creds is None:
@@ -380,6 +391,7 @@ def get_connection():
 
 
 def init_db() -> None:
+    """执行 INIT_DB_SCRIPT 建表（每用户/每进程仅一次）。"""
     if _is_db_initialized():
         return
 

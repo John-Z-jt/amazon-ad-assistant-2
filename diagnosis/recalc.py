@@ -1,3 +1,4 @@
+"""用户修改诊断阈值后，重算分析与诊断 pipeline 并写回 store / session_state。"""
 from __future__ import annotations
 
 import streamlit as st

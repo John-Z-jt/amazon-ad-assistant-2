@@ -1,3 +1,8 @@
+"""诊断阈值配置的加载/保存与指纹（用于检测 UI 修改后是否需要重算）。
+
+配置按用户保存在 user_data_dir/diagnosis_config.json；
+``maybe_recalc_on_config_change`` 对比 fingerprint 决定是否重跑各 diagnosis pipeline。
+"""
 from __future__ import annotations
 
 import json

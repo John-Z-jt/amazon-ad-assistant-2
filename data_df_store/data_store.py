@@ -1,4 +1,16 @@
 # data_store.py
+"""进程内会话数据仓库（按登录 user_id 分桶）。
+
+常用 key（手动分析 Tab）
+-----------------------
+- 原始报表：``budget`` / ``placement`` / ``keyword`` / ``search`` / ``search_share`` /
+  ``product_sponsored`` / ``inventory`` / ``business``
+- 分析结果：``*_analysis_result``（如 ``budget_analysis_result``）
+- 诊断结果：``*_diagnosis_result``
+- linkage：``campaign_asin_map``、``inventory_by_asin`` 等（见 diagnosis.linkage）
+
+注意：刷新页面或换用户会清空；历史库数据在 SQLite/Turso，不在 store 里。
+"""
 import streamlit as st
 
 

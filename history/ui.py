@@ -1,3 +1,15 @@
+"""历史查询 Tab：入库、按日期拼数、双时间段对比与 Streamlit 状态管理。
+
+核心约定
+---------
+- **手动分析**：读当前会话 ``store`` 里的上传 DataFrame。
+- **历史查询**：从 SQLite/Turso 按日期范围拼数；同一「单元格」多次上传时取
+  ``uploaded_at`` 最新一批（拼数 SQL 见各 ``*_storage.query_*``）。
+- **双时间段**：A/B 两列并排展示；B 列筛选项默认跟随 A（见 ``_maybe_sync_dual_filters_from_a``）。
+- **日期共享**：``history_shared_dates`` + 全局 widget key（``history_start_date`` 等），
+  切换报表类型时不重置已选日期段；``setdefault`` 初始化，不覆盖用户手动修改。
+- **防重复入库**：``maybe_ingest_*`` 用文件/content 指纹；Streamlit rerun 不会重复写库。
+"""
 from __future__ import annotations
 
 import hashlib
@@ -44,6 +56,7 @@ SUPPORTED_HISTORY_REPORTS = {
 
 
 def _init_session_upload_state() -> None:
+    """本会话写入历史库的 upload_id 列表，供「结束本次分析」批量删除。"""
     if "session_upload_ids" not in st.session_state:
         st.session_state.session_upload_ids = []
     if "show_end_session_dialog" not in st.session_state:
@@ -70,6 +83,7 @@ def _upload_data_fingerprint(
     file_content: bytes | None = None,
     df=None,
 ) -> str:
+    """上传指纹：同文件在 uploader 中停留时用于跳过重复 ingest。"""
     if file_content is not None:
         digest = hashlib.sha256()
         digest.update(source_filename.encode("utf-8"))
@@ -427,6 +441,7 @@ def _budget_analysis_config() -> tuple[float, int]:
 
 
 def _build_period_state(report: str, start_date: date, end_date: date) -> dict:
+    """预查一段日期范围是否有数据，并记录拼数单元格说明（用于 UI caption）。"""
     if report == "budget":
         df, missing_days = query_budget_dataframe(start_date, end_date)
         cell_hint = "活动+日期"
@@ -714,6 +729,7 @@ def _dual_filter_widget_keys(report: str, side: str) -> list[str]:
 
 
 def _dual_filter_snapshot(report: str, side: str) -> dict:
+    """读取某列（a/b）当前 multiselect 选项，用于检测 A 是否变更。"""
     snapshot = {}
     for key in _dual_filter_widget_keys(report, side):
         val = st.session_state.get(key)
@@ -725,6 +741,7 @@ def _dual_filter_snapshot(report: str, side: str) -> dict:
 
 
 def _clear_dual_filter_sync_track(report: str | None = None) -> None:
+    """清除 A→B 筛选同步的快照；重新「生成分析」后 B 会再次跟随 A。"""
     if report:
         st.session_state.pop(f"history_dual_last_a_{report}", None)
         return
@@ -754,6 +771,7 @@ def _maybe_sync_dual_filters_from_a(report: str) -> None:
 
 
 def _render_history_results(query_state: dict) -> None:
+    """根据 mode 渲染单段或 A/B 双列分析结果。"""
     normalized = _normalize_history_query(query_state)
     if not normalized:
         return
@@ -816,6 +834,7 @@ def _maybe_bootstrap_shared_dates_from_query() -> None:
 
 
 def _seed_history_query_mode_widget() -> None:
+    """首次渲染时从 history_shared_dates 恢复单/双时间段 radio。"""
     if "history_query_mode" in st.session_state:
         return
     shared = st.session_state.get("history_shared_dates") or {}
@@ -857,6 +876,7 @@ def _seed_history_date_widgets(mode_label: str, today: date) -> None:
 
 
 def _render_history_date_inputs(*, mode: str) -> tuple[bool, list[tuple[date, date]]]:
+    """日期控件使用全局 key（与报表类型无关），切换报表时保持已选日期。"""
     if mode == "单时间段":
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
@@ -885,6 +905,7 @@ def _render_history_date_inputs(*, mode: str) -> tuple[bool, list[tuple[date, da
 
 
 def _save_history_query(report: str, mode: str, ranges: list[tuple[date, date]]) -> bool:
+    """写入当前报表的查询结果，并同步 history_shared_dates 供其他报表复用日期。"""
     for i, (start, end) in enumerate(ranges):
         if start > end:
             label = f"时间段 {chr(65 + i)}" if mode == "dual" else "所选"
@@ -907,6 +928,7 @@ def _save_history_query(report: str, mode: str, ranges: list[tuple[date, date]])
 
 
 def render_history_query_tab() -> None:
+    """历史查询主界面：upload 摘要 → 选报表/日期 → 生成分析 → 展示结果。"""
     _init_session_upload_state()
     st.subheader("历史查询")
     st.caption(
@@ -952,6 +974,7 @@ def render_history_query_tab() -> None:
     if query_state is None:
         query_state = st.session_state.get("history_budget_query")
     normalized = _normalize_history_query(query_state)
+    # 只展示「当前选中的报表类型」对应的查询结果；切换报表需再点「生成分析」
     if normalized and normalized.get("report") == report_key:
         st.markdown("---")
         _render_history_results(normalized)

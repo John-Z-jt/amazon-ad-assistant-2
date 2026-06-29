@@ -1,3 +1,4 @@
+"""广告位报表历史库：ingest 与按日期范围拼数（拼数规则同 budget_storage）。"""
 from __future__ import annotations
 
 from datetime import date, datetime

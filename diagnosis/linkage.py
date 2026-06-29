@@ -1,3 +1,10 @@
+"""跨报表数据联动：推广的商品 / 库存 / 业务报表 → 活动-ASIN 索引。
+
+诊断模块（广告位、投放词、搜索词）通过 ``store`` 中的 linkage 索引把
+广告活动、广告组与 ASIN、库存、业务销量关联起来，避免在各 diagnosis 里重复解析 DataFrame。
+
+列名兼容：Amazon 导出与库存/业务报表列名不一致，``pick_column`` 做模糊匹配。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -10,6 +17,7 @@ def _normalize_col_name(name: str) -> str:
 
 
 def pick_column(df: pd.DataFrame, *candidates: str) -> str | None:
+    """按候选名（忽略大小写与空格）在 DataFrame 中找第一个存在的列。"""
     normalized = {_normalize_col_name(col): col for col in df.columns}
     for candidate in candidates:
         key = _normalize_col_name(candidate)
@@ -56,6 +64,7 @@ def build_campaign_adgroup_asin_map(product_df: pd.DataFrame) -> dict[tuple[str,
 
 
 def build_asin_sku_map(product_df: pd.DataFrame) -> dict[str, str]:
+    """ASIN → SKU（每个 ASIN 取首个非空 SKU）。"""
     if product_df is None or product_df.empty:
         return {}
     if "广告ASIN" not in product_df.columns:
@@ -73,6 +82,7 @@ def build_asin_sku_map(product_df: pd.DataFrame) -> dict[str, str]:
 
 
 def build_inventory_by_asin(inventory_df: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """ASIN → {可售数量, 在途库存数量}；列名兼容中英文库存报表。"""
     if inventory_df is None or inventory_df.empty:
         return {}
     asin_col = pick_column(inventory_df, "ASIN", "asin")
@@ -97,6 +107,7 @@ def build_inventory_by_asin(inventory_df: pd.DataFrame) -> dict[str, dict[str, A
 
 
 def build_business_by_asin(business_df: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """ASIN → {已订购商品数量}；用于库存/销量侧诊断。"""
     if business_df is None or business_df.empty:
         return {}
 
@@ -118,6 +129,7 @@ def build_business_by_asin(business_df: pd.DataFrame) -> dict[str, dict[str, Any
 
 
 def get_asins_for_campaign(campaign: str, campaign_asin_map: dict[str, list[str]]) -> list[str]:
+    """从 linkage 索引取某活动下的 ASIN 列表（名称需与报表一致）。"""
     return campaign_asin_map.get(campaign.strip(), [])
 
 

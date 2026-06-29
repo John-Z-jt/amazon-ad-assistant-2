@@ -1,3 +1,8 @@
+"""Amazon 报表日期列解析（文本 / Excel 序列号 / YYYYMMDD 整数）。
+
+各 analyzer 的 clean_* 与历史库入库前应调用 coerce_report_dates，
+解析失败的行不会进入按日明细。
+"""
 from __future__ import annotations
 
 import re

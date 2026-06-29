@@ -1,3 +1,7 @@
+"""预算报表历史库：ingest 与按 (活动, 日期) 拼数。
+
+拼数规则：同一单元格多次上传时，ROW_NUMBER 按 uploaded_at DESC 取 rn=1。
+"""
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -176,6 +180,7 @@ def delete_uploads(upload_ids: list[int]) -> None:
 
 
 def _date_range_list(start: date, end: date) -> list[date]:
+    """闭区间 [start, end] 的日历天列表，用于计算 missing_days。"""
     days = []
     current = start
     while current <= end:

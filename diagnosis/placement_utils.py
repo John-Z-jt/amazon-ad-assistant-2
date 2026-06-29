@@ -1,3 +1,8 @@
+"""广告位诊断用的放置类型归一化与活动级指标汇总。
+
+Amazon 报表「放置」列为中文描述；``normalize_placement_type`` 映射为
+TOS / ROS / PP，便于按搜索侧 vs 商品页聚合 clicks/spend/acos。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -13,6 +18,7 @@ PLACEMENT_TYPE_OTHER = "OTHER"
 
 
 def normalize_placement_type(placement_name: str) -> str:
+    """中文放置名 → TOS / ROS / PP / OTHER。"""
     name = str(placement_name or "").strip()
     if "搜索结果顶部" in name:
         return PLACEMENT_TYPE_TOS
@@ -24,6 +30,7 @@ def normalize_placement_type(placement_name: str) -> str:
 
 
 def _sum_metrics(rows: list[dict], types: set[str]) -> dict[str, float]:
+    """对 summary 行按放置类型过滤后求和 clicks/spend/sales/orders，并算 acos/cvr。"""
     clicks = 0.0
     spend = 0.0
     sales = 0.0
@@ -77,6 +84,7 @@ def compute_campaign_placement_bundle(summary_rows: list[dict], campaign: str) -
 
 
 def is_search_performance_good(bundle: dict[str, Any], config: DiagnosisConfig) -> bool:
+    """搜索侧（TOS+ROS）是否达标：点击量、ACOS、订单数、CVR 均过阈值。"""
     acos = bundle.get("search_acos")
     if bundle.get("search_clicks", 0) < config.min_search_clicks:
         return False
@@ -93,6 +101,7 @@ def is_search_performance_good(bundle: dict[str, Any], config: DiagnosisConfig) 
 
 
 def is_pp_performance_good(bundle: dict[str, Any], config: DiagnosisConfig) -> bool:
+    """商品页是否「够好」：点击量/ACOS/订单/CVR 四项中至少满足 pp_good_min_conditions 项。"""
     checks = 0
     pp_acos = bundle.get("pp_acos")
     if bundle.get("pp_clicks", 0) >= config.min_pp_clicks:
@@ -110,6 +119,7 @@ def is_pp_performance_good(bundle: dict[str, Any], config: DiagnosisConfig) -> b
 
 
 def search_metrics_unable(bundle: dict[str, Any], config: DiagnosisConfig) -> bool:
+    """搜索侧数据不足以判断（点击过少或无 ACOS）。"""
     acos = bundle.get("search_acos")
     if bundle.get("search_clicks", 0) < config.min_search_clicks:
         return True

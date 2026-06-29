@@ -1,3 +1,4 @@
+"""多用户隔离：ContextVar + session_state 提供当前 user_id 与数据目录。"""
 from __future__ import annotations
 
 from contextvars import ContextVar

@@ -1,3 +1,8 @@
+"""广告位诊断：基于 placement 汇总 + 预算/库存/linking 规则输出结论。
+
+Listing 自评仅作风险提示，不参与结论门禁（见 ``_append_listing_hint``）。
+结论码见 PLACEMENT_CONCLUSION_LABELS。
+"""
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
@@ -250,6 +255,7 @@ def _evaluate_campaign(
 
 
 def run_placement_diagnosis(config: DiagnosisConfig | None = None, user_id: str | None = None) -> PlacementDiagnosisResult:
+    """逐活动诊断搜索位占比/ACOS/CVR/库存，跳过预算异常活动。"""
     if user_id is None:
         from auth.user_context import get_current_user_id
 
