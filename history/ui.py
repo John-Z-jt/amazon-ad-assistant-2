@@ -790,40 +790,97 @@ def _render_history_results(query_state: dict) -> None:
     )
 
 
-def _render_history_date_inputs(
-    *,
-    report_key: str,
-    mode: str,
-    today: date,
-    default_start: date,
-    default_b_start: date,
-    default_b_end: date,
-) -> tuple[bool, list[tuple[date, date]]]:
-    prefix = f"history_{report_key}"
+def _history_fallback_ranges(today: date) -> dict:
+    """无历史选择时的默认日期段。"""
+    return {
+        "single": [(today - timedelta(days=7), today)],
+        "dual": [
+            (today - timedelta(days=7), today),
+            (today - timedelta(days=14), today - timedelta(days=8)),
+        ],
+    }
+
+
+def _maybe_bootstrap_shared_dates_from_query() -> None:
+    """首次进入时，用已有查询结果初始化共享日期（兼容旧 session）。"""
+    if st.session_state.get("history_shared_dates"):
+        return
+    query_state = st.session_state.get("history_report_query") or st.session_state.get("history_budget_query")
+    normalized = _normalize_history_query(query_state)
+    if not normalized or not normalized.get("periods"):
+        return
+    st.session_state["history_shared_dates"] = {
+        "mode": normalized.get("mode", "single"),
+        "ranges": [(p["start"], p["end"]) for p in normalized["periods"]],
+    }
+
+
+def _seed_history_query_mode_widget() -> None:
+    if "history_query_mode" in st.session_state:
+        return
+    shared = st.session_state.get("history_shared_dates") or {}
+    st.session_state["history_query_mode"] = (
+        "双时间段" if shared.get("mode") == "dual" else "单时间段"
+    )
+
+
+def _seed_history_date_widgets(mode_label: str, today: date) -> None:
+    """仅在该 widget key 尚未存在时写入 session_state（不覆盖用户已选手动日期）。"""
+    shared = st.session_state.get("history_shared_dates") or {}
+    fallback = _history_fallback_ranges(today)
+
+    if mode_label == "单时间段":
+        ranges_iso = shared.get("ranges") if shared.get("mode") == "single" else None
+        if not ranges_iso and shared.get("mode") == "dual" and len(shared.get("ranges", [])) >= 1:
+            ranges_iso = [shared["ranges"][0]]
+        if not ranges_iso:
+            start, end = fallback["single"][0]
+        else:
+            start = date.fromisoformat(ranges_iso[0][0])
+            end = date.fromisoformat(ranges_iso[0][1])
+        st.session_state.setdefault("history_start_date", start)
+        st.session_state.setdefault("history_end_date", end)
+        return
+
+    ranges_iso = shared.get("ranges") if shared.get("mode") == "dual" else None
+    if not ranges_iso or len(ranges_iso) < 2:
+        (start_a, end_a), (start_b, end_b) = fallback["dual"]
+    else:
+        start_a = date.fromisoformat(ranges_iso[0][0])
+        end_a = date.fromisoformat(ranges_iso[0][1])
+        start_b = date.fromisoformat(ranges_iso[1][0])
+        end_b = date.fromisoformat(ranges_iso[1][1])
+    st.session_state.setdefault("history_dual_start_a", start_a)
+    st.session_state.setdefault("history_dual_end_a", end_a)
+    st.session_state.setdefault("history_dual_start_b", start_b)
+    st.session_state.setdefault("history_dual_end_b", end_b)
+
+
+def _render_history_date_inputs(*, mode: str) -> tuple[bool, list[tuple[date, date]]]:
     if mode == "单时间段":
         col1, col2, col3 = st.columns([2, 2, 1])
         with col1:
-            start = st.date_input("开始日期", value=default_start, key=f"{prefix}_start_date")
+            start = st.date_input("开始日期", key="history_start_date")
         with col2:
-            end = st.date_input("结束日期", value=today, key=f"{prefix}_end_date")
+            end = st.date_input("结束日期", key="history_end_date")
         with col3:
             st.write("")
             st.write("")
-            run = st.button("生成分析", key=f"{prefix}_run_query", use_container_width=True)
+            run = st.button("生成分析", key="history_run_query", use_container_width=True)
         return run, [(start, end)]
 
     col_a, col_b = st.columns(2)
     with col_a:
         st.markdown("**时间段 A**")
-        start_a = st.date_input("开始", value=default_start, key=f"{prefix}_dual_start_a")
-        end_a = st.date_input("结束", value=today, key=f"{prefix}_dual_end_a")
+        start_a = st.date_input("开始", key="history_dual_start_a")
+        end_a = st.date_input("结束", key="history_dual_end_a")
     with col_b:
         st.markdown("**时间段 B**")
-        start_b = st.date_input("开始", value=default_b_start, key=f"{prefix}_dual_start_b")
-        end_b = st.date_input("结束", value=default_b_end, key=f"{prefix}_dual_end_b")
+        start_b = st.date_input("开始", key="history_dual_start_b")
+        end_b = st.date_input("结束", key="history_dual_end_b")
     _, btn_col, _ = st.columns([2, 1, 2])
     with btn_col:
-        run = st.button("生成分析", key=f"{prefix}_run_query_dual", use_container_width=True)
+        run = st.button("生成分析", key="history_run_query_dual", use_container_width=True)
     return run, [(start_a, end_a), (start_b, end_b)]
 
 
@@ -840,6 +897,10 @@ def _save_history_query(report: str, mode: str, ranges: list[tuple[date, date]])
         "mode": mode,
         "report": report,
         "periods": periods,
+    }
+    st.session_state["history_shared_dates"] = {
+        "mode": mode,
+        "ranges": [(start.isoformat(), end.isoformat()) for start, end in ranges],
     }
     _clear_dual_filter_sync_track(report)
     return True
@@ -871,26 +932,19 @@ def render_history_query_tab() -> None:
         return
 
     today = date.today()
-    default_start = today - timedelta(days=7)
-    default_b_start = today - timedelta(days=14)
-    default_b_end = today - timedelta(days=8)
+    _maybe_bootstrap_shared_dates_from_query()
+    _seed_history_query_mode_widget()
 
     query_mode = st.radio(
         "查询模式",
         options=["单时间段", "双时间段"],
         horizontal=True,
-        key=f"history_query_mode_{report_key}",
+        key="history_query_mode",
     )
     mode_key = "dual" if query_mode == "双时间段" else "single"
+    _seed_history_date_widgets(query_mode, today)
 
-    run_query, date_ranges = _render_history_date_inputs(
-        report_key=report_key,
-        mode=query_mode,
-        today=today,
-        default_start=default_start,
-        default_b_start=default_b_start,
-        default_b_end=default_b_end,
-    )
+    run_query, date_ranges = _render_history_date_inputs(mode=query_mode)
     if run_query:
         _save_history_query(report_key, mode_key, date_ranges)
 

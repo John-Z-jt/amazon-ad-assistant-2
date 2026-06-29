@@ -4,6 +4,17 @@ import streamlit as st
 from data_df_store.data_store import store
 from utils.date_parse import coerce_report_dates, maybe_warn_date_parse_failures
 
+
+def _fmt_int_display(val) -> str:
+    """展示用整数格式（历史库 float 汇总后避免长小数）。"""
+    if pd.isna(val):
+        return "-"
+    try:
+        return f"{int(round(float(val))):,}"
+    except (TypeError, ValueError):
+        return str(val)
+
+
 def clean_placement_data(df: pd.DataFrame) -> pd.DataFrame:
     """清洗广告位报表，转换数值列并计算点击率。
 
@@ -106,7 +117,10 @@ def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
     if df_clean is None or df_clean.empty:
         return {"summary": [], "top_placements": [], "worst_placements": [], "daily_details": {}}
 
-    required_cols = ['日期', '广告活动名称', '放置', '花费_数值', '7天总销售额_数值', 'ACOS_数值', '点击率']
+    required_cols = [
+        '日期', '广告活动名称', '放置', '展示量', '点击量', '7天总订单数',
+        '花费_数值', '7天总销售额_数值', 'ACOS_数值', '点击率',
+    ]
     missing = [c for c in required_cols if c not in df_clean.columns]
 
     if missing:
@@ -160,13 +174,15 @@ def get_placement_analysis(df_clean: pd.DataFrame) -> dict:
     daily_details = {}
     df_dated = df_clean.dropna(subset=['日期']) if '日期' in df_clean.columns else df_clean
     for (act, placement), group in df_dated.groupby(['广告活动名称', '放置']):
-        daily = group[['日期', '花费_数值', '7天总销售额_数值', '点击率', 'ACOS_数值']].copy()
+        daily = group[
+            ['日期', '展示量', '点击量', '7天总订单数', '花费_数值', '7天总销售额_数值', '点击率', 'ACOS_数值']
+        ].copy()
         daily = daily.sort_values('日期')
         daily.rename(columns={
+            '7天总订单数': '订单数',
             '花费_数值': '花费',
             '7天总销售额_数值': '销售额',
-            '点击率': '点击率',
-            'ACOS_数值': 'ACOS'
+            'ACOS_数值': 'ACOS',
         }, inplace=True)
         daily_details[(act, placement)] = daily.to_dict(orient='records')
 
@@ -221,11 +237,17 @@ def render_placement_analysis_result(result: dict, *, key_prefix: str = "placeme
     summary_df = pd.DataFrame(filtered_summary)
     summary_df.rename(
         columns={
+            "总展示量": "展示量",
+            "总点击量": "点击量",
+            "总订单数": "订单数",
             "整体点击率": "点击率(整体)",
             "整体ACOS": "ACOS(整体)",
         },
         inplace=True,
     )
+    for col in ("展示量", "点击量", "订单数"):
+        if col in summary_df.columns:
+            summary_df[col] = summary_df[col].apply(_fmt_int_display)
     if "点击率(整体)" in summary_df.columns:
         summary_df["点击率(整体)"] = summary_df["点击率(整体)"].apply(
             lambda x: f"{x:.1%}" if pd.notna(x) else "-"
@@ -235,7 +257,10 @@ def render_placement_analysis_result(result: dict, *, key_prefix: str = "placeme
             lambda x: f"{x:.1%}" if pd.notna(x) else "-"
         )
 
-    display_cols = ["广告活动名称", "放置", "总花费", "总销售额", "点击率(整体)", "ACOS(整体)"]
+    display_cols = [
+        "广告活动名称", "放置", "展示量", "点击量", "订单数",
+        "总花费", "总销售额", "点击率(整体)", "ACOS(整体)",
+    ]
     available_cols = [c for c in display_cols if c in summary_df.columns]
     st.dataframe(summary_df[available_cols], use_container_width=True)
 
@@ -283,13 +308,16 @@ def render_placement_analysis_result(result: dict, *, key_prefix: str = "placeme
                     f"总销售额: {total_sales:.2f} | ACOS: {avg_acos:.1%}"
                 ):
                     display_daily = daily_df.copy()
+                    for col in ("展示量", "点击量", "订单数"):
+                        if col in display_daily.columns:
+                            display_daily[col] = display_daily[col].apply(_fmt_int_display)
                     display_daily["点击率"] = display_daily["点击率"].apply(
                         lambda x: f"{x:.1%}" if pd.notna(x) else "-"
                     )
                     display_daily["ACOS"] = display_daily["ACOS"].apply(
                         lambda x: f"{x:.1%}" if pd.notna(x) else "-"
                     )
-                    daily_cols = ["日期", "花费", "销售额", "点击率", "ACOS"]
+                    daily_cols = ["日期", "展示量", "点击量", "订单数", "花费", "销售额", "点击率", "ACOS"]
                     available_daily = [c for c in daily_cols if c in display_daily.columns]
                     st.dataframe(display_daily[available_daily], use_container_width=True)
             st.markdown("**建议**：关注ACOS异常偏高的日期和广告位组合，调整出价或否定词。")

@@ -44,6 +44,13 @@ def to_percent_float(series):
     return pd.to_numeric(s, errors='coerce') / 100
 
 
+def _fmt_int_display(val) -> str:
+    """展示用整数格式（历史库 float 汇总后避免长小数）。"""
+    if pd.isna(val):
+        return "-"
+    return str(int(round(float(val))))
+
+
 def _ensure_share_optional_columns(df_clean: pd.DataFrame) -> pd.DataFrame:
     if "keyword" not in df_clean.columns:
         df_clean["keyword"] = "—"
@@ -277,9 +284,19 @@ def render_search_term_trend_result(result: dict, *, key_prefix: str = "trend") 
         if "acos" in trend_df.columns:
             trend_df["acos"] = trend_df["acos"].apply(lambda x: f"{x:.1%}" if pd.notna(x) else "-")
         if "total_spend" in trend_df.columns:
-            trend_df["total_spend"] = trend_df["total_spend"].apply(lambda x: f"{x:.2f}")
+            trend_df["total_spend"] = trend_df["total_spend"].apply(
+                lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+            )
         if "total_sales" in trend_df.columns:
-            trend_df["total_sales"] = trend_df["total_sales"].apply(lambda x: f"{x:.2f}")
+            trend_df["total_sales"] = trend_df["total_sales"].apply(
+                lambda x: f"{x:.2f}" if pd.notna(x) else "-"
+            )
+        if "total_clicks" in trend_df.columns:
+            trend_df["total_clicks"] = trend_df["total_clicks"].apply(_fmt_int_display)
+        if "total_orders" in trend_df.columns:
+            trend_df["total_orders"] = trend_df["total_orders"].apply(_fmt_int_display)
+        if "impression_rank" in trend_df.columns:
+            trend_df["impression_rank"] = trend_df["impression_rank"].apply(_fmt_int_display)
         trend_df.rename(
             columns={
                 "date": "日期",
@@ -317,9 +334,13 @@ def render_search_term_trend_result(result: dict, *, key_prefix: str = "trend") 
         if "date" in attr_df.columns:
             attr_df["date"] = parse_report_date_series(attr_df["date"]).dt.strftime("%Y-%m-%d")
         if "spend" in attr_df.columns:
-            attr_df["spend"] = attr_df["spend"].apply(lambda x: f"{x:.2f}")
+            attr_df["spend"] = attr_df["spend"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "-")
         if "sales" in attr_df.columns:
-            attr_df["sales"] = attr_df["sales"].apply(lambda x: f"{x:.2f}")
+            attr_df["sales"] = attr_df["sales"].apply(lambda x: f"{x:.2f}" if pd.notna(x) else "-")
+        if "clicks" in attr_df.columns:
+            attr_df["clicks"] = attr_df["clicks"].apply(_fmt_int_display)
+        if "orders" in attr_df.columns:
+            attr_df["orders"] = attr_df["orders"].apply(_fmt_int_display)
         attr_df.rename(
             columns={
                 "date": "日期",
