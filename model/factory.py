@@ -13,8 +13,25 @@ from utils.config_handler import rag_conf
 
 
 def _dashscope_api_key() -> str | None:
-    key = os.environ.get("DASHSCOPE_API_KEY")
-    return str(key).strip() if key else None
+    try:
+        from auth.user_settings import resolve_dashscope_api_key
+
+        key = resolve_dashscope_api_key()
+        if key:
+            return key
+    except Exception:
+        pass
+    env_key = os.environ.get("DASHSCOPE_API_KEY")
+    return str(env_key).strip() if env_key else None
+
+
+def _chat_model_name() -> str:
+    try:
+        from auth.user_settings import resolve_chat_model_name
+
+        return resolve_chat_model_name()
+    except Exception:
+        return str(rag_conf.get("chat_model_name") or "deepseek-v4-flash")
 
 
 class BaseModelFactory(ABC):
@@ -25,7 +42,7 @@ class BaseModelFactory(ABC):
 
 class ChatModelFactory(BaseModelFactory):
     def generator(self) -> Optional[Embeddings | BaseChatModel]:
-        kwargs = {"model": rag_conf["chat_model_name"]}
+        kwargs = {"model": _chat_model_name()}
         api_key = _dashscope_api_key()
         if api_key:
             kwargs["dashscope_api_key"] = api_key
@@ -49,6 +66,11 @@ def get_chat_model() -> BaseChatModel:
 @lru_cache(maxsize=1)
 def get_embed_model() -> Embeddings:
     return EmbeddingsFactory().generator()
+
+
+def reset_model_caches() -> None:
+    get_chat_model.cache_clear()
+    get_embed_model.cache_clear()
 
 
 def __getattr__(name: str):

@@ -1,5 +1,5 @@
 from langchain.agents import create_agent
-from model.factory import chat_model
+from model.factory import get_chat_model
 from utils.prompt_loader import load_system_prompts
 from agent_tool import (
     rag_summarize,
@@ -30,7 +30,7 @@ class ReactAgent:
             None
         """
         self.agent = create_agent(
-            model=chat_model,
+            model=get_chat_model(),
             system_prompt=load_system_prompts(),
             tools=[
                 rag_summarize,

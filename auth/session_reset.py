@@ -45,6 +45,19 @@ def reset_app_state_for_user(user_id: str) -> None:
     invalidate_uploads_list_cache()
     invalidate_all_cached_turso_connections()
 
+    try:
+        from model.factory import reset_model_caches
+
+        reset_model_caches()
+    except Exception:
+        pass
+    try:
+        from Agent.agent_tool import clear_rag_service_cache
+
+        clear_rag_service_cache()
+    except Exception:
+        pass
+
     st.session_state.diagnosis_config = load_diagnosis_config(user_id)
     st.session_state._diagnosis_config_fp = st.session_state.diagnosis_config.fingerprint()
     st.session_state.session_upload_ids = []

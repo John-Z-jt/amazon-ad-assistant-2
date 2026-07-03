@@ -47,7 +47,8 @@ pip install -r requirements.txt
 ```
 
 1. 复制 `config/credentials.yaml.example` → `config/credentials.yaml`，填写登录用户
-2. （可选）复制 `.streamlit/secrets.toml.example` → `.streamlit/secrets.toml`，配置 `DASHSCOPE_API_KEY`、Turso 等
+2. （可选）复制 `.streamlit/secrets.toml.example` → `.streamlit/secrets.toml`，配置登录账号、Turso 等  
+   - **百炼 API Key**：可在 App 内侧边栏 **「⚙️ AI 配置（百炼）」** 由每位用户自填（推荐）；也可在 Secrets 配全局 `DASHSCOPE_API_KEY`  
 3. 启动：
 
 ```bash
@@ -63,9 +64,9 @@ streamlit run Agent/app.py
 1. Fork 本仓库，在 [Streamlit Cloud](https://share.streamlit.io) 新建 App
 2. **Main file path：** `Agent/app.py`
 3. 在 **Secrets** 中配置（结构见 `.streamlit/secrets.toml.example`）：
-   - `DASHSCOPE_API_KEY`
    - `[credentials.usernames.xxx]` 登录账号
-   - `[turso.databases]` / `[turso.tokens]` 每用户独立库（可选，不配则本地 SQLite 逻辑）
+   - `[turso.databases]` / `[turso.tokens]` 每用户独立库（历史库）
+   - `DASHSCOPE_API_KEY` 可选；不配则用户在侧边栏自填百炼 Key
 
 ---
 

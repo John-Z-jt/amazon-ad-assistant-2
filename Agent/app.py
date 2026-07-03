@@ -75,6 +75,12 @@ from history.ui import (
 from history.ops_journal_ui import render_ops_journal_tab
 from auth.login import require_login
 from auth.session_reset import ensure_user_session
+from auth.user_settings import (
+    dashscope_key_source,
+    resolve_chat_model_name,
+    user_has_dashscope_key,
+)
+from auth.user_settings_ui import render_user_settings_panel
 
 
 authenticator, user_id = require_login()
@@ -88,9 +94,6 @@ render_top_bar_end_session_button()
 if st.session_state.get("show_end_session_dialog"):
     render_end_session_dialog()
 
-# 初始化session_state
-if "agent" not in st.session_state:
-    st.session_state.agent = ReactAgent()  # 实例化你的Agent
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "df_budget" not in st.session_state:
@@ -153,6 +156,7 @@ with st.sidebar:
         "FBA 库存报表 (CSV / Excel)", type=REPORT_FILE_TYPES, key=f"inventory_{user_id}"
     )
 
+    render_user_settings_panel()
     current_config = render_diagnosis_config_sidebar()
     maybe_recalc_on_config_change(current_config, user_id)
 
@@ -513,34 +517,54 @@ with tab1:
 
 
 with tab2:
-    chat_store = st.session_state.user_history_store
-    for message in chat_store.get_history():
-        st.chat_message(message["role"]).write(message["content"])
-
-    prompt = st.chat_input()
-
-    if prompt:
-        st.chat_message("user").write(prompt)
-        history = chat_store.get_history()
-
-        message_with_historys = history + [{"role": "user", "content": prompt}]
-        response_message = []
-        with st.spinner("智能客服思考中..."):
-            res_stream = st.session_state["agent"].execute_stream(
-                message_with_historys, user_id=user_id
+    if not user_has_dashscope_key():
+        st.info(
+            "使用 AI 助手前，请在左侧边栏 **⚙️ AI 配置（百炼）** 中填写 **DashScope API Key**。"
+            "手动分析、历史查询、诊断等功能无需 API Key。"
+        )
+        if dashscope_key_source() == "none":
+            st.caption(
+                "也可由管理员在 Streamlit Secrets 中配置全局 `DASHSCOPE_API_KEY`（全员共用）。"
             )
+    else:
+        model_name = resolve_chat_model_name()
+        st.caption(f"当前对话模型：`{model_name}`（可在侧边栏 AI 配置中修改）")
 
-            def capture(generate, cache_list):
-                for chunk in generate:
-                    cache_list.append(chunk)
-                    for char in chunk:
-                        time.sleep(0.01)
-                        yield char
+        chat_store = st.session_state.user_history_store
+        for message in chat_store.get_history():
+            st.chat_message(message["role"]).write(message["content"])
 
-            st.chat_message("assistant").write_stream(capture(res_stream, response_message))
-            chat_store.add_message(role="user", content=prompt)
-            chat_store.add_message(role="assistant", content=response_message[-1])
-        st.rerun()
+        prompt = st.chat_input()
+
+        if prompt:
+            if "agent" not in st.session_state:
+                try:
+                    st.session_state.agent = ReactAgent()
+                except Exception as e:
+                    st.error(f"AI 助手初始化失败，请检查 API Key 与模型名称：{e}")
+                    st.stop()
+
+            st.chat_message("user").write(prompt)
+            history = chat_store.get_history()
+
+            message_with_historys = history + [{"role": "user", "content": prompt}]
+            response_message = []
+            with st.spinner("智能客服思考中..."):
+                res_stream = st.session_state["agent"].execute_stream(
+                    message_with_historys, user_id=user_id
+                )
+
+                def capture(generate, cache_list):
+                    for chunk in generate:
+                        cache_list.append(chunk)
+                        for char in chunk:
+                            time.sleep(0.01)
+                            yield char
+
+                st.chat_message("assistant").write_stream(capture(res_stream, response_message))
+                chat_store.add_message(role="user", content=prompt)
+                chat_store.add_message(role="assistant", content=response_message[-1])
+            st.rerun()
 
         
 
