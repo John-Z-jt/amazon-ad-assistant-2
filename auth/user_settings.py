@@ -27,6 +27,7 @@ def _settings_path(user_id: str | None = None) -> Path:
 
 
 def load_user_settings(user_id: str | None = None) -> dict[str, Any]:
+    """读取 user_settings.json；文件不存在或损坏时返回空 dict。"""
     path = _settings_path(user_id)
     if not path.is_file():
         return {}
@@ -39,6 +40,7 @@ def load_user_settings(user_id: str | None = None) -> dict[str, Any]:
 
 
 def save_user_settings(settings: dict[str, Any], user_id: str | None = None) -> None:
+    """写入 user_settings.json（自动创建 user_dict/{user_id}/ 目录）。"""
     path = _settings_path(user_id)
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -50,6 +52,7 @@ def _clean_str(val: Any) -> str:
 
 
 def mask_secret(value: str | None, *, visible_tail: int = 4) -> str:
+    """脱敏展示 API Key，仅保留末尾若干字符。"""
     s = _clean_str(value)
     if not s:
         return ""
@@ -59,11 +62,13 @@ def mask_secret(value: str | None, *, visible_tail: int = 4) -> str:
 
 
 def get_user_dashscope_api_key(user_id: str | None = None) -> str | None:
+    """仅返回用户自己在侧边栏保存的 Key，不含全局 Key。"""
     key = _clean_str(load_user_settings(user_id).get("dashscope_api_key"))
     return key or None
 
 
 def get_user_chat_model_name(user_id: str | None = None) -> str | None:
+    """仅返回用户自选的对话模型名，不含 rag.yml 默认。"""
     name = _clean_str(load_user_settings(user_id).get("chat_model_name"))
     return name or None
 
@@ -88,10 +93,12 @@ def resolve_chat_model_name(user_id: str | None = None) -> str:
 
 
 def user_has_dashscope_key(user_id: str | None = None) -> bool:
+    """是否有可用 Key（用户自配或全局 Secrets 均可）。"""
     return bool(resolve_dashscope_api_key(user_id))
 
 
 def dashscope_key_source(user_id: str | None = None) -> str:
+    """Key 来源：\"user\" | \"global\" | \"none\"。"""
     if get_user_dashscope_api_key(user_id):
         return "user"
     import os
@@ -102,10 +109,12 @@ def dashscope_key_source(user_id: str | None = None) -> str:
 
 
 def preset_model_ids() -> list[str]:
+    """侧边栏下拉框中的预设模型 ID 列表。"""
     return [model_id for model_id, _ in CHAT_MODEL_PRESETS]
 
 
 def chat_model_label(model_id: str) -> str:
+    """模型 ID → 展示用中文标签；未知 ID 原样返回。"""
     for mid, label in CHAT_MODEL_PRESETS:
         if mid == model_id:
             return label
@@ -113,6 +122,7 @@ def chat_model_label(model_id: str) -> str:
 
 
 def invalidate_runtime_after_settings_change() -> None:
+    """用户保存/清除 AI 配置后：清模型缓存、Agent 实例与 RAG 单例。"""
     from model.factory import reset_model_caches
 
     reset_model_caches()

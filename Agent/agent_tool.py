@@ -1,4 +1,4 @@
-# agent_tool.py
+"""LangChain @tool 定义：RAG、各报表分析/诊断、上下文填充（供 ReactAgent 调用）。"""
 import os
 from data_df_store.data_store import store
 from langchain_core.tools import tool
@@ -19,11 +19,13 @@ _rag_service = None
 
 
 def clear_rag_service_cache() -> None:
+    """清空 RAG 单例（用户改 Key 或切换账号后调用）。"""
     global _rag_service
     _rag_service = None
 
 
 def _get_rag_service() -> RagSummarizeService:
+    """懒加载 RagSummarizeService 单例。"""
     global _rag_service
     if _rag_service is None:
         _rag_service = RagSummarizeService()

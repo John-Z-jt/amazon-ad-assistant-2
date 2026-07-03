@@ -1,3 +1,4 @@
+"""ReAct Agent 封装：LangChain create_agent + 广告分析/诊断工具 + 中间件。"""
 from langchain.agents import create_agent
 from model.factory import get_chat_model
 from utils.prompt_loader import load_system_prompts
@@ -18,17 +19,10 @@ from agent_tool import (
 from Agent.middleware import monitor_tool, log_before_model, report_prompt_switch
 
 
-
 class ReactAgent:
+    """广告诊断 ReAct Agent：流式对话，工具可读写当前用户的 store 分桶。"""
+
     def __init__(self):
-        """初始化 ReAct Agent，绑定模型、工具与中间件。
-
-        Returns:
-            None
-
-        Raises:
-            None
-        """
         self.agent = create_agent(
             model=get_chat_model(),
             system_prompt=load_system_prompts(),
@@ -49,13 +43,12 @@ class ReactAgent:
             middleware=[monitor_tool, log_before_model, report_prompt_switch]
         )
 
-
     def execute_stream(self, message: list, *, user_id: str | None = None):
-        """以流式方式执行 Agent 并逐块返回模型输出。
+        """以流式方式执行 Agent，逐块 yield 助手文本。
 
         Args:
-            message: 对话消息列表。
-            user_id: 当前登录用户，供工具线程内访问 store 分桶。
+            message: OpenAI 风格消息列表 [{"role", "content"}, ...]。
+            user_id: 传入 Agent context，供工具线程内绑定 store 分桶。
         """
         input_dict = {
             "messages": message

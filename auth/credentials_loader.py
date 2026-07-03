@@ -1,3 +1,8 @@
+"""登录凭证加载：本地 config/credentials.yaml 优先，其次 Streamlit Secrets。
+
+明文密码在加载时自动 bcrypt 哈希；Cloud 部署只需在 Secrets 配置
+[credentials.usernames.*] 与 [cookie]。
+"""
 from __future__ import annotations
 
 import copy

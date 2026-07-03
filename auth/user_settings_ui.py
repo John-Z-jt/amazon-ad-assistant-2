@@ -18,6 +18,7 @@ from auth.user_settings import (
 
 
 def render_user_settings_panel() -> None:
+    """侧边栏「AI 配置（百炼）」：保存/清除 Key 与对话模型。"""
     with st.sidebar.expander("⚙️ AI 配置（百炼）", expanded=False):
         st.caption(
             "仅 **AI 助手** 需要配置。手动分析、历史查询、诊断不依赖 API Key。"

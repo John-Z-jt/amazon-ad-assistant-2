@@ -1,4 +1,17 @@
-# 临时将当前文件所在目录加入 sys.path，以便能导入 utils（因为此时还没添加根目录）
+"""亚马逊广告诊断助手 — Streamlit 主入口。
+
+部署：Streamlit Cloud Main file 指向 Agent/app.py。
+
+页面结构：
+    - 侧边栏：报表上传、百炼 AI 配置、诊断参数
+    - Tab1 手动分析：预算/广告位/关键词/搜索词等分析与诊断面板
+    - Tab2 历史查询：Turso 云端或本地 SQLite 历史报表
+    - Tab3 运营日志
+    - Tab4 AI 助手：ReAct Agent 流式对话（需百炼 Key）
+
+数据流：上传 → 解析入 store → 可选写入历史库 → 诊断流水线按需重算。
+"""
+# 将 Agent 目录加入 sys.path，以便在未添加项目根目录前导入 utils
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -83,6 +96,7 @@ from auth.user_settings import (
 from auth.user_settings_ui import render_user_settings_panel
 
 
+# --- 登录与会话 ---
 authenticator, user_id = require_login()
 ensure_user_session(user_id)
 
@@ -94,6 +108,7 @@ render_top_bar_end_session_button()
 if st.session_state.get("show_end_session_dialog"):
     render_end_session_dialog()
 
+# --- session_state 默认值（上传 DataFrame、分析结果、诊断配置等）---
 if "messages" not in st.session_state:
     st.session_state.messages = []
 if "df_budget" not in st.session_state:
@@ -124,6 +139,7 @@ st.info("💡 提示：刷新页面后需要重新上传文件。请先上传所
 
 REPORT_FILE_TYPES = ["csv", "xlsx"]
 
+# --- 侧边栏：上传、AI 配置、诊断参数 ---
 with st.sidebar:
     authenticator.logout("退出登录", "sidebar")
     st.caption(f"当前用户：**{user_id}**")
@@ -192,6 +208,7 @@ def load_report_file(file_bytes: bytes, filename: str):
         return None
 
 
+# --- 报表上传：解析 → data_store → 可选历史入库（Turso）---
 _diagnosis_needs_recalc = False
 
 if budget_file is None:
@@ -425,7 +442,7 @@ elif not is_upload_file_unchanged(
 if _diagnosis_needs_recalc:
     recalc_diagnosis_pipelines(st.session_state.diagnosis_config, user_id)
 
-# 标签页
+# --- 主界面 Tab ---
 tab1, tab_history, tab_ops, tab2 = st.tabs(
     ["📊 手动分析", "📅 历史查询", "📝 运营日志", "🤖 AI助手"]
 )
@@ -516,6 +533,7 @@ with tab1:
         st.info("请先在左侧上传业务报表（可选，用于后续广告与 ASIN 联动）")
 
 
+# --- AI 助手 Tab：流式对话，历史持久化到 chat.json ---
 with tab2:
     if not user_has_dashscope_key():
         st.info(

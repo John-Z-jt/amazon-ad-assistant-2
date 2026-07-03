@@ -1,3 +1,4 @@
+"""本地 / Cloud 环境变量引导：将 Secrets 与 .env 注入 os.environ。"""
 from __future__ import annotations
 
 import os

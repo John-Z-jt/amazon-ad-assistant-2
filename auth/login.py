@@ -1,3 +1,4 @@
+"""Streamlit 登录页：streamlit-authenticator + 写入 session_state.user_id。"""
 from __future__ import annotations
 
 import streamlit as st

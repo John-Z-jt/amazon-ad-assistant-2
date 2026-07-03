@@ -1,3 +1,8 @@
+"""登录用户切换时的 Streamlit 会话重置。
+
+ensure_user_session 在 app 入口调用：user_id 变化时清空上传数据、分析结果、
+AI Agent 缓存等，避免不同运营账号串数据。
+"""
 from __future__ import annotations
 
 import streamlit as st

@@ -1,3 +1,4 @@
+"""FAISS 向量库：文档切分、Embedding、相似度检索（RAG 知识库底层）。"""
 import os
 import pickle
 import faiss
@@ -31,15 +32,10 @@ def _embed_documents(docs: List[Document]) -> np.ndarray:
 
 
 class VectorStoreService:
+    """FAISS 索引 + 文档存储的增删查与磁盘持久化。"""
+
     def __init__(self):
-        """初始化 FAISS 向量库服务，尝试从磁盘加载已有索引。
-
-        Returns:
-            None
-
-        Raises:
-            None
-        """
+        """初始化 FAISS 向量库服务，若磁盘已有索引则自动加载。"""
         self.index = None
         self.doc_store = {}  # id -> Document
         self.next_id = 0
