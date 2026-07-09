@@ -5,7 +5,8 @@ import pandas as pd
 
 ReportSource = Union[str, os.PathLike, BinaryIO]
 
-_DEFAULT_ENCODINGS = ["gbk", "utf-8", "gb2312", "gb18030"]
+# 美国站 UTF-8 导出优先；GBK 系报表仍向后兼容
+_DEFAULT_ENCODINGS = ["utf-8-sig", "utf-8", "gb18030", "gbk", "gb2312"]
 
 
 def _source_filename(source: ReportSource, filename: str | None = None) -> str:

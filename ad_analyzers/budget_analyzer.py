@@ -75,8 +75,8 @@ def get_budget_analysis(
     df_clean = df.copy()
     df_clean['预算'] = clean_series(df_clean[col_budget])
     df_clean['花费'] = clean_series(df_clean[col_spent])
-    df_clean, date_failed = coerce_report_dates(df_clean, col_date)
-    maybe_warn_date_parse_failures(date_failed, "预算报表")
+    df_clean, date_failed, date_fail_samples = coerce_report_dates(df_clean, col_date)
+    maybe_warn_date_parse_failures(date_failed, "预算报表", samples=date_fail_samples)
     df_clean = df_clean.dropna(subset=['日期', '预算', '花费'])
 
     if df_clean.empty:

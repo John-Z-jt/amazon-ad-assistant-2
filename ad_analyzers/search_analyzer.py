@@ -58,8 +58,8 @@ SEARCH_GROUP_KEYS = ["广告活动名称", "广告组名称", "投放", "匹配�
 def clean_search_report(df: pd.DataFrame) -> pd.DataFrame:
     """清洗搜索词报表"""
     df_clean = df.copy()
-    df_clean, date_failed = coerce_report_dates(df_clean, "日期")
-    maybe_warn_date_parse_failures(date_failed, "搜索词报表")
+    df_clean, date_failed, date_fail_samples = coerce_report_dates(df_clean, "日期")
+    maybe_warn_date_parse_failures(date_failed, "搜索词报表", samples=date_fail_samples)
 
     df_clean['展示量'] = pd.to_numeric(df_clean['展示量'], errors='coerce')
     df_clean['点击量'] = pd.to_numeric(df_clean['点击量'], errors='coerce')
