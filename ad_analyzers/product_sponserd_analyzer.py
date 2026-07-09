@@ -27,8 +27,8 @@ def to_percent_float(series):
 def clean_product_sponsored_report(df: pd.DataFrame) -> pd.DataFrame:
     """清洗推广的商品报表，返回标准中文列名 DataFrame。"""
     df_clean = df.copy()
-    df_clean, date_failed = coerce_report_dates(df_clean, "日期")
-    maybe_warn_date_parse_failures(date_failed, "推广的商品报表")
+    df_clean, date_failed, date_fail_samples = coerce_report_dates(df_clean, "日期")
+    maybe_warn_date_parse_failures(date_failed, "推广的商品报表", samples=date_fail_samples)
 
     df_clean['展示量'] = pd.to_numeric(df_clean['展示量'], errors='coerce')
     df_clean['点击量'] = pd.to_numeric(df_clean['点击量'], errors='coerce')

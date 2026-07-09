@@ -2,6 +2,9 @@
 
 各 analyzer 的 clean_* 与历史库入库前应调用 coerce_report_dates，
 解析失败的行不会进入按日明细。
+
+美国站常见英文日期如 ``May 16, 2026`` / ``Jun 01, 2026`` 需显式格式解析，
+不可仅依赖 pd.to_datetime 推断（跨月长 CSV 在 Cloud 上易整段失败）。
 """
 from __future__ import annotations
 
@@ -14,6 +17,17 @@ DATE_COLUMN_ALIASES = ("日期", "date", "Date", "DATE", "Day", "day", "时间")
 # Excel 序列日：约 1954-01-01 .. 2120-01-01
 _EXCEL_SERIAL_MIN = 20_000
 _EXCEL_SERIAL_MAX = 80_000
+
+# 美国站广告后台 CSV 常见英文日期
+_EXPLICIT_DATE_FORMATS = (
+    "%b %d, %Y",  # May 16, 2026 / Jun 01, 2026
+    "%B %d, %Y",  # May 16, 2026（全称月份）
+    "%Y-%m-%d",
+    "%Y/%m/%d",
+    "%m/%d/%Y",
+    "%d/%m/%Y",
+    "%Y%m%d",
+)
 
 
 def _normalize_col_name(name: str) -> str:
@@ -40,6 +54,31 @@ def _non_empty_mask(series: pd.Series) -> pd.Series:
     return series.notna() & (as_str != "") & (~as_str.str.lower().isin({"nan", "none", "nat"}))
 
 
+def _clean_date_text(value) -> str:
+    """去掉首尾空白与 CSV 引号。"""
+    s = str(value).strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in {'"', "'"}:
+        s = s[1:-1].strip()
+    return s
+
+
+def _try_explicit_date_formats(texts: pd.Series) -> pd.Series:
+    """对仍未解析的文本尝试常见显式格式（含美国站英文月份）。"""
+    out = pd.Series(pd.NaT, index=texts.index, dtype="datetime64[ns]")
+    cleaned = texts.map(_clean_date_text)
+    pending = cleaned.ne("")
+    if not pending.any():
+        return out
+
+    for fmt in _EXPLICIT_DATE_FORMATS:
+        still = pending & out.isna()
+        if not still.any():
+            break
+        parsed = pd.to_datetime(cleaned[still], format=fmt, errors="coerce")
+        out.loc[parsed.index] = parsed
+    return out
+
+
 def parse_report_date_series(series: pd.Series) -> pd.Series:
     """
     解析报表日期列：支持 datetime、文本、Excel 序列号、YYYYMMDD 整数。
@@ -51,7 +90,13 @@ def parse_report_date_series(series: pd.Series) -> pd.Series:
     if pd.api.types.is_datetime64_any_dtype(series):
         out = pd.to_datetime(series, errors="coerce")
     else:
-        out = pd.to_datetime(series, errors="coerce")
+        cleaned = series.map(_clean_date_text)
+        out = pd.to_datetime(cleaned, errors="coerce")
+
+        still_na = out.isna() & _non_empty_mask(series)
+        if still_na.any():
+            explicit = _try_explicit_date_formats(series[still_na])
+            out.loc[explicit.index] = explicit
 
         still_na = out.isna() & _non_empty_mask(series)
         if still_na.any():
@@ -82,6 +127,20 @@ def parse_report_date_series(series: pd.Series) -> pd.Series:
     return out.dt.normalize()
 
 
+def _failed_date_samples(raw: pd.Series, parsed: pd.Series, *, limit: int = 3) -> list[str]:
+    failed_mask = parsed.isna() & _non_empty_mask(raw)
+    if not failed_mask.any():
+        return []
+    samples: list[str] = []
+    for val in raw[failed_mask].head(limit * 3):
+        text = _clean_date_text(val)
+        if text and text not in samples:
+            samples.append(text)
+        if len(samples) >= limit:
+            break
+    return samples
+
+
 def coerce_report_dates(
     df: pd.DataFrame,
     column: str = "日期",
@@ -89,7 +148,7 @@ def coerce_report_dates(
     output_column: str | None = None,
 ) -> tuple[pd.DataFrame, int]:
     """
-    解析并写回日期列。返回 (新 DataFrame, 解析失败行数)。
+    解析并写回日期列。返回 (新 DataFrame, 解析失败行数, 失败样例列表)。
     """
     out_col = output_column or column
     src_col = resolve_date_column(df, column)
@@ -104,18 +163,27 @@ def coerce_report_dates(
     if src_col != out_col:
         df = df.drop(columns=[src_col])
     df[out_col] = parsed
-    return df, failed
+    samples = _failed_date_samples(raw, parsed)
+    return df, failed, samples
 
 
-def maybe_warn_date_parse_failures(failed: int, report_label: str) -> None:
+def maybe_warn_date_parse_failures(
+    failed: int,
+    report_label: str,
+    *,
+    samples: list[str] | None = None,
+) -> None:
     if failed <= 0:
         return
     try:
         import streamlit as st
 
-        st.warning(
+        msg = (
             f"**{report_label}**：有 {failed} 行「日期」无法识别，这些行不会出现在每日明细中。"
             "建议直接上传广告后台原始 CSV；若使用 Excel，请确保整列日期格式一致。"
         )
+        if samples:
+            msg += f" 失败样例：{', '.join(repr(s) for s in samples[:3])}。"
+        st.warning(msg)
     except Exception:
         pass

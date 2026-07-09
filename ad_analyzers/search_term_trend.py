@@ -174,8 +174,8 @@ def clean_search_share_report(df: pd.DataFrame, *, for_storage: bool = False) ->
         st.error(msg)
         return pd.DataFrame()
 
-    df_clean, date_failed = coerce_report_dates(df_clean, "date", output_column="date")
-    maybe_warn_date_parse_failures(date_failed, "搜索词份额报告")
+    df_clean, date_failed, date_fail_samples = coerce_report_dates(df_clean, "date", output_column="date")
+    maybe_warn_date_parse_failures(date_failed, "搜索词份额报告", samples=date_fail_samples)
     df_clean['spend'] = to_float(df_clean['spend'])
     df_clean['sales'] = to_float(df_clean['sales'])
     df_clean['clicks'] = pd.to_numeric(df_clean['clicks'], errors='coerce')

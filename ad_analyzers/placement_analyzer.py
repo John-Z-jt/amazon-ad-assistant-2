@@ -36,8 +36,8 @@ def clean_placement_data(df: pd.DataFrame) -> pd.DataFrame:
         None
     """
     df_clean = df.copy()
-    df_clean, date_failed = coerce_report_dates(df_clean, "日期")
-    maybe_warn_date_parse_failures(date_failed, "广告位报表")
+    df_clean, date_failed, date_fail_samples = coerce_report_dates(df_clean, "日期")
+    maybe_warn_date_parse_failures(date_failed, "广告位报表", samples=date_fail_samples)
 
     def to_float(series):
         """将 Series 清洗并转换为浮点数。
